@@ -1,17 +1,17 @@
 Rules-Requires-Root: no
 Standards-Version: 4.5.1
-Build-Depends: debhelper-compat (= 13), dh-sequence-python3, python3-all
+Build-Depends: debhelper-compat (= 13), dh-sequence-python3, python3-all-dev, cython3
 Testsuite: autopkgtest-pkg-python
 Source: python-fastbencode
 Priority: optional
 Section: python
 Maintainer: Jelmer Vernooĳ <jelmer@debian.org>
-Vcs-Git: https://salsa.debian.org/jelmer/python-fastbencode.git
-Vcs-Browser: https://salsa.debian.org/jelmer/python-fastbencode
+Vcs-Git: https://salsa.debian.org/python-team/packages/python-fastbencode.git
+Vcs-Browser: https://salsa.debian.org/python-team/packages/python-fastbencode
 
 Package: python3-fastbencode
 Depends: ${python3:Depends}, ${misc:Depends}
-Architecture: all
-Description: Implementation of bencode with optional fast C extensions
- UNKNOWN
- .
+Architecture: any
+Description: Fast bencode implementation
+ Fast python implementation of the bencode serialization
+ mechanism used by the BitTorrent protocol and others.
