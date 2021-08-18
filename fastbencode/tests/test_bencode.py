@@ -290,6 +290,9 @@ class TestBencodeDecode(TestCase):
         self._check([[b'Alice', b'Bob'], [2, 3]], b'll5:Alice3:Bobeli2ei3eee')
 
     def test_list_deepnested(self):
+        import platform
+        if platform.python_implementation() == 'PyPy':
+            self.skipTest('recursion not an issue on pypy')
         with RecursionLimit():
             self._run_check_error(RuntimeError, (b"l" * 100) + (b"e" * 100))
 
