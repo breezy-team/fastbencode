@@ -5,7 +5,7 @@ Testsuite: autopkgtest-pkg-python
 Source: python-fastbencode
 
 Package: python3-fastbencode
-Depends: ${python3:Depends}
+Depends: ${python3:Depends}, ${misc:Depends}
 Architecture: all
 Description: Implementation of bencode with optional fast C extensions
  UNKNOWN
