@@ -28,7 +28,7 @@ def get_named_object(module_name, member_name=None):
     This is usually much more convenient than dealing with ``__import__``
     directly::
 
-        >>> doc = get_named_object('breezy.pyutils', 'get_named_object.__doc__')
+        >>> doc = get_named_object('pyutils', 'get_named_object.__doc__')
         >>> doc.splitlines()[0]
         'Get the Python object named by a given module and member name.'
 
@@ -88,7 +88,7 @@ def clone_test(test, new_id):
     # read the test output for parameterized tests, because tracebacks will be
     # associated with irrelevant tests.
     try:
-        details = new_test._TestCase__details
+        new_test._TestCase__details
     except AttributeError:
         # must be a different version of testtools than expected.  Do nothing.
         pass
@@ -96,7 +96,6 @@ def clone_test(test, new_id):
         # Reset the '__details' dict.
         new_test._TestCase__details = {}
     return new_test
-
 
 
 def apply_scenario(test, scenario):
@@ -201,14 +200,15 @@ def permute_tests_for_extension(standard_tests, loader, py_module_name,
     except ModuleNotFoundError:
         pass
     else:
-        scenarios.append(('C', {'module': ext_module_name}))
+        scenarios.append(('C', {'module': get_named_object(ext_module_name)}))
     result = multiply_tests(standard_tests, scenarios, suite)
     return result
 
 
 def load_tests(loader, standard_tests, pattern):
     return permute_tests_for_extension(
-        standard_tests, loader, 'fastbencode._bencode_py', 'fastbencode._bencode_pyx')
+        standard_tests, loader, 'fastbencode._bencode_py',
+        'fastbencode._bencode_pyx')
 
 
 class RecursionLimit(object):
@@ -379,10 +379,10 @@ class TestBencodeEncode(TestCase):
 
     def test_list_deep_nested(self):
         top = []
-        l = top
-        for i in range(1000):
-            l.append([])
-            l = l[0]
+        lst = top
+        for unused_i in range(1000):
+            lst.append([])
+            lst = lst[0]
         with RecursionLimit():
             self.assertRaises(RuntimeError, self.module.bencode, top)
 

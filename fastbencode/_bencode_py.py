@@ -15,8 +15,6 @@
 #
 # Modifications copyright (C) 2008 Canonical Ltd
 
-import sys
-
 
 class BDecoder(object):
 
@@ -85,10 +83,10 @@ class BDecoder(object):
         if not isinstance(x, bytes):
             raise TypeError
         try:
-            r, l = self.decode_func[x[:1]](x, 0)
+            r, l = self.decode_func[x[:1]](x, 0)  # noqa: E741
         except (IndexError, KeyError, OverflowError) as e:
             raise ValueError(str(e))
-        if l != len(x):
+        if l != len(x):  # noqa: E741
             raise ValueError
         return r
 
@@ -142,18 +140,22 @@ def encode_dict(x, r):
 encode_func = {}
 encode_func[type(Bencached(0))] = encode_bencached
 encode_func[int] = encode_int
+
+
 def int_to_bytes(n):
     return b'%d' % n
+
+
 encode_func[bytes] = encode_string
 encode_func[list] = encode_list
 encode_func[tuple] = encode_list
 encode_func[dict] = encode_dict
 encode_func[bool] = encode_bool
 
-from breezy._static_tuple_py import StaticTuple
+from breezy._static_tuple_py import StaticTuple  # noqa: E402
 encode_func[StaticTuple] = encode_list
 try:
-    from breezy._static_tuple_c import StaticTuple
+    from breezy._static_tuple_c import StaticTuple  # noqa: E402
 except ImportError:
     pass
 else:

@@ -3,3 +3,5 @@ build
 fastbencode/_bencode_pyx.c
 fastbencode/_bencode_pyx.h
 __pycache__
+fastbencode.egg-info
+*.pyc

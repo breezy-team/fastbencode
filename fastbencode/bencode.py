@@ -28,10 +28,10 @@ def failed_to_load_extension(exception):
     implementation should be loaded instead::
 
     >>> try:
-    >>>     import breezy._fictional_extension_pyx
+    >>>     import _fictional_extension_pyx
     >>> except ImportError, e:
-    >>>     breezy.osutils.failed_to_load_extension(e)
-    >>>     import breezy._fictional_extension_py
+    >>>     failed_to_load_extension(e)
+    >>>     import _fictional_extension_py
     """
     # NB: This docstring is just an example, not a doctest, because doctest
     # currently can't cope with the use of lazy imports in this namespace --
