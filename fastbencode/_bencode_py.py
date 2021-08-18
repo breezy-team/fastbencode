@@ -152,15 +152,6 @@ encode_func[tuple] = encode_list
 encode_func[dict] = encode_dict
 encode_func[bool] = encode_bool
 
-from breezy._static_tuple_py import StaticTuple  # noqa: E402
-encode_func[StaticTuple] = encode_list
-try:
-    from breezy._static_tuple_c import StaticTuple  # noqa: E402
-except ImportError:
-    pass
-else:
-    encode_func[StaticTuple] = encode_list
-
 
 def bencode(x):
     r = []
