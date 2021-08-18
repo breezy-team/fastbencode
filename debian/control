@@ -6,6 +6,8 @@ Source: python-fastbencode
 Priority: optional
 Section: python
 Maintainer: Jelmer Vernooĳ <jelmer@debian.org>
+Vcs-Git: https://salsa.debian.org/jelmer/python-fastbencode.git
+Vcs-Browser: https://salsa.debian.org/jelmer/python-fastbencode
 
 Package: python3-fastbencode
 Depends: ${python3:Depends}, ${misc:Depends}
