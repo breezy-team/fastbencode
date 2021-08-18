@@ -5,6 +5,7 @@ Testsuite: autopkgtest-pkg-python
 Source: python-fastbencode
 Priority: optional
 Section: python
+Maintainer: Jelmer Vernooĳ <jelmer@debian.org>
 
 Package: python3-fastbencode
 Depends: ${python3:Depends}, ${misc:Depends}
