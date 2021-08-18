@@ -1,0 +1,25 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+
+Files: *
+Copyright: Canonical Ltd
+           2007-2010, Canonical Ltd # <<<<<<<<<<<<<>
+           Petru Paler
+License: UnknownCopyrighted
+
+Files: build/* fastbencode/__init__.py fastbencode/_bencode_pyx.pyx
+Copyright: 2007-2010, Canonical Ltd
+License: GPL-2+
+
+Files: build/lib.linux-x86_64-3.9/fastbencode/_bencode_py.py fastbencode/_bencode_py.py
+Copyright: 2008, Canonical Ltd
+License: MIT/X11
+
+Files: debian/*
+Copyright: Unknown
+License: Unknown
+
+License: GPL-2+
+Comment: Add the corresponding license text here
+
+License: MIT/X11
+Comment: Add the corresponding license text here
