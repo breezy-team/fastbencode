@@ -114,7 +114,7 @@ add_cython_extension('fastbencode._bencode_pyx')
 setup(
     name="fastbencode",
     description="Implementation of bencode with optional fast C extensions",
-    version="0.0.1",
+    version="0.0.2",
     maintainer="Breezy Developers",
     maintainer_email="breezy-core@googlegroups.com",
     url="https://github.com/breezy-team/fastbencode",

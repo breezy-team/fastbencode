@@ -146,9 +146,9 @@ def multiply_tests(tests, scenarios, result):
     the scenario name at the end of its id(), and updating the test object's
     __dict__ with the scenario_param_dict.
 
-    >>> import breezy.tests.test_sampler
+    >>> import tests.test_sampler
     >>> r = multiply_tests(
-    ...     breezy.tests.test_sampler.DemoTest('test_nothing'),
+    ...     tests.test_sampler.DemoTest('test_nothing'),
     ...     [('one', dict(param=1)),
     ...      ('two', dict(param=2))],
     ...     TestUtil.TestSuite())
@@ -156,7 +156,7 @@ def multiply_tests(tests, scenarios, result):
     >>> len(tests)
     2
     >>> tests[0].id()
-    'breezy.tests.test_sampler.DemoTest.test_nothing(one)'
+    'tests.test_sampler.DemoTest.test_nothing(one)'
     >>> tests[0].param
     1
     >>> tests[1].param
@@ -174,13 +174,13 @@ def permute_tests_for_extension(standard_tests, loader, py_module_name,
     This is meant to be used inside a modules 'load_tests()' function. It will
     create 2 scenarios, and cause all tests in the 'standard_tests' to be run
     against both implementations. Setting 'test.module' to the appropriate
-    module. See breezy.tests.test__chk_map.load_tests as an example.
+    module. See tests.test__chk_map.load_tests as an example.
 
     :param standard_tests: A test suite to permute
     :param loader: A TestLoader
     :param py_module_name: The python path to a python module that can always
         be loaded, and will be considered the 'python' implementation. (eg
-        'breezy._chk_map_py')
+        '_chk_map_py')
     :param ext_module_name: The python path to an extension module. If the
         module cannot be loaded, a single test will be added, which notes that
         the module is not available. If it can be loaded, all standard_tests
