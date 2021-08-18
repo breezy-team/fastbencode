@@ -1,0 +1,5 @@
+python-fastbencode (0.0.4-1) UNRELEASED; urgency=low
+
+  * Initial release.
+
+ -- Jelmer Vernooĳ <jelmer@debian.org>  Wed, 18 Aug 2021 23:55:59 +0100

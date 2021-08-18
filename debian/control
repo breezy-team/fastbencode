@@ -1,0 +1,9 @@
+Rules-Requires-Root: no
+Standards-Version: 4.5.1
+Build-Depends: debhelper-compat (= 13), dh-sequence-python3, python3-all
+Testsuite: autopkgtest-pkg-python
+Source: python-fastbencode
+
+Package: python3-fastbencode
+Depends: ${python3:Depends}
+Architecture: all
