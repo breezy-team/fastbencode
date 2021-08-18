@@ -1,0 +1,10 @@
+README.md
+setup.py
+fastbencode/__init__.py
+fastbencode/_bencode_py.py
+fastbencode/_bencode_pyx.pyx
+fastbencode.egg-info/PKG-INFO
+fastbencode.egg-info/SOURCES.txt
+fastbencode.egg-info/dependency_links.txt
+fastbencode.egg-info/requires.txt
+fastbencode.egg-info/top_level.txt
