@@ -1,6 +1,5 @@
 python-fastbencode (0.0.5-1) UNRELEASED; urgency=low
 
-  * Initial release.
-  * New upstream release.
+  * Initial release. Closes: #992464
 
  -- Jelmer Vernooĳ <jelmer@debian.org>  Thu, 19 Aug 2021 00:02:48 -0000

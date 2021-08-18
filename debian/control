@@ -5,7 +5,8 @@ Testsuite: autopkgtest-pkg-python
 Source: python-fastbencode
 Priority: optional
 Section: python
-Maintainer: Jelmer Vernooĳ <jelmer@debian.org>
+Maintainer: Debian Python Team <team+python@tracker.debian.org>
+Uploaders: Jelmer Vernooĳ <jelmer@debian.org>
 Vcs-Git: https://salsa.debian.org/python-team/packages/python-fastbencode.git
 Vcs-Browser: https://salsa.debian.org/python-team/packages/python-fastbencode
 
