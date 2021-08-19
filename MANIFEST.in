@@ -1,2 +1,2 @@
 include README.md
-recursive-include fastbencode *.py *.pyx *.pxd *.h
+recursive-include fastbencode *.py *.pyx *.pxd *.h *.c
