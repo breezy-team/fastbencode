@@ -9,10 +9,11 @@ Maintainer: Debian Python Team <team+python@tracker.debian.org>
 Uploaders: Jelmer Vernooĳ <jelmer@debian.org>
 Vcs-Git: https://salsa.debian.org/python-team/packages/python-fastbencode.git
 Vcs-Browser: https://salsa.debian.org/python-team/packages/python-fastbencode
+Homepage: https://github.com/breezy-team/fastbencode
 
 Package: python3-fastbencode
-Depends: ${python3:Depends}, ${misc:Depends}
+Depends: ${python3:Depends}, ${misc:Depends}, ${shlibs:Depends}
 Architecture: any
 Description: Fast bencode implementation
- Fast python implementation of the bencode serialization
+ Fast Python implementation of the bencode serialization
  mechanism used by the BitTorrent protocol and others.
