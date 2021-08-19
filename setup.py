@@ -3,9 +3,11 @@
 import os
 import sys
 from setuptools import setup
+from distutils.version import LooseVersion
 
 try:
     from Cython.Distutils import build_ext
+    from Cython.Compiler.Version import version as cython_version
 except ImportError:
     have_cython = False
     # try to build the extension from the prior generated source.
@@ -17,7 +19,17 @@ except ImportError:
     print("")
     from distutils.command.build_ext import build_ext
 else:
-    have_cython = True
+    minimum_cython_version = '0.29'
+    cython_version_info = LooseVersion(cython_version)
+    if cython_version_info < LooseVersion(minimum_cython_version):
+        print("Version of Cython is too old. "
+              "Current is %s, need at least %s."
+              % (cython_version, minimum_cython_version))
+        print("If the .c files are available, they will be built,"
+              " but modifying the .pyx files will not rebuild them.")
+        have_cython = False
+    else:
+        have_cython = True
 
 
 from distutils import log
