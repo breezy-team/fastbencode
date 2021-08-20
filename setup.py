@@ -133,5 +133,6 @@ setup(
     ext_modules=ext_modules,
     extras_require={'cext': ['cython>=0.29']},
     cmdclass={'build_ext': build_ext_if_possible},
+    license="GPLv2 or later",
     test_suite="fastbencode.tests.test_suite",
     packages=["fastbencode"])
