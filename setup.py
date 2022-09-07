@@ -122,11 +122,15 @@ def add_cython_extension(module_name, libraries=None, extra_source=[]):
 
 add_cython_extension('fastbencode._bencode_pyx')
 
+with open('README.md', 'r') as f:
+    long_description = f.read()
+
 
 setup(
     name="fastbencode",
     description="Implementation of bencode with optional fast C extensions",
     version="0.0.10",
+    long_description=long_description,
     maintainer="Breezy Developers",
     maintainer_email="breezy-core@googlegroups.com",
     url="https://github.com/breezy-team/fastbencode",
