@@ -129,7 +129,7 @@ with open('README.md', 'r') as f:
 setup(
     name="fastbencode",
     description="Implementation of bencode with optional fast C extensions",
-    version="0.0.10",
+    version="0.0.11",
     long_description=long_description,
     maintainer="Breezy Developers",
     maintainer_email="breezy-core@googlegroups.com",
