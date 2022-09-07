@@ -14,7 +14,9 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 
-"""Wrapper around the bencode pyrex and python implementation"""
+"""Wrapper around the bencode cython and python implementation"""
+
+from typing import Type
 
 
 _extension_load_failures = []
@@ -49,6 +51,8 @@ def failed_to_load_extension(exception):
             UserWarning)
         _extension_load_failures.append(exception_str)
 
+
+Bencached: Type
 
 try:
     from ._bencode_pyx import bdecode, bdecode_as_tuple, bencode, Bencached

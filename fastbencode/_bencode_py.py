@@ -16,6 +16,9 @@
 # Modifications copyright (C) 2008 Canonical Ltd
 
 
+from typing import Dict, Type, Callable, List
+
+
 class BDecoder(object):
 
     def __init__(self, yield_tuples=False):
@@ -137,7 +140,7 @@ def encode_dict(x, r):
     r.append(b'e')
 
 
-encode_func = {}
+encode_func: Dict[Type, Callable[[object, List[bytes]], None]] = {}
 encode_func[type(Bencached(0))] = encode_bencached
 encode_func[int] = encode_int
 
