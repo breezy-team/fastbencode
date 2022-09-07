@@ -10,13 +10,11 @@ provides significantly better performance.
 
 Example:
 
-```
->>> from fastbencode import bencode, bdecode
->>> bencode([1, 2, b'a', {b'd': 3}])
-b'li1ei2e1:ad1:di3eee'
->>> bdecode(bencode([1, 2, b'a', {b'd': 3}]))
-[1, 2, b'a', {b'd': 3}]
-```
+    >>> from fastbencode import bencode, bdecode
+    >>> bencode([1, 2, b'a', {b'd': 3}])
+    b'li1ei2e1:ad1:di3eee'
+    >>> bdecode(bencode([1, 2, b'a', {b'd': 3}]))
+    [1, 2, b'a', {b'd': 3}]
 
 License
 =======
