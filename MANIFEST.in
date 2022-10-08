@@ -1,3 +1,4 @@
 include README.md
 include COPYING
+include fastbencode/py.typed
 recursive-include fastbencode *.py *.pyx *.pxd *.h *.c
