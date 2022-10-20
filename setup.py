@@ -2,8 +2,11 @@
 
 import os
 import sys
-from setuptools import setup
-from distutils.version import LooseVersion
+from setuptools import setup, Extension
+try:
+    from packaging.version import Version
+except ImportError:
+    from distutils.version import LooseVersion as Version
 
 try:
     from Cython.Distutils import build_ext
@@ -20,8 +23,8 @@ except ImportError:
     from distutils.command.build_ext import build_ext
 else:
     minimum_cython_version = '0.29'
-    cython_version_info = LooseVersion(cython_version)
-    if cython_version_info < LooseVersion(minimum_cython_version):
+    cython_version_info = Version(cython_version)
+    if cython_version_info < Version(minimum_cython_version):
         print("Version of Cython is too old. "
               "Current is %s, need at least %s."
               % (cython_version, minimum_cython_version))
@@ -31,54 +34,6 @@ else:
     else:
         have_cython = True
 
-
-from distutils import log
-from distutils.errors import CCompilerError, DistutilsPlatformError
-from distutils.extension import Extension
-
-
-class build_ext_if_possible(build_ext):
-
-    user_options = build_ext.user_options + [
-        ('allow-python-fallback', None,
-         "When an extension cannot be built, allow falling"
-         " back to the pure-python implementation.")
-        ]
-
-    def initialize_options(self):
-        build_ext.initialize_options(self)
-        self.allow_python_fallback = False
-
-    def run(self):
-        try:
-            build_ext.run(self)
-        except DistutilsPlatformError:
-            e = sys.exc_info()[1]
-            if not self.allow_python_fallback:
-                log.warn('\n  Cannot build extensions.\n'
-                         '  Use "build_ext --allow-python-fallback" to use'
-                         ' slower python implementations instead.\n')
-                raise
-            log.warn(str(e))
-            log.warn('\n  Extensions cannot be built.\n'
-                     '  Using the slower Python implementations instead.\n')
-
-    def build_extension(self, ext):
-        try:
-            build_ext.build_extension(self, ext)
-        except CCompilerError:
-            if not self.allow_python_fallback:
-                log.warn('\n  Cannot build extension "%s".\n'
-                         '  Use "build_ext --allow-python-fallback" to use'
-                         ' slower python implementations instead.\n'
-                         % (ext.name,))
-                raise
-            log.warn('\n  Building of "%s" extension failed.\n'
-                     '  Using the slower Python implementation instead.'
-                     % (ext.name,))
-
-
-# Override the build_ext if we have Cython available
 
 ext_modules = []
 
@@ -117,11 +72,11 @@ def add_cython_extension(module_name, libraries=None, extra_source=[]):
     ext_modules.append(
         Extension(
             module_name, source, define_macros=define_macros,
-            libraries=libraries, include_dirs=include_dirs))
+            libraries=libraries, include_dirs=include_dirs,
+            optional=True))
 
 
 add_cython_extension('fastbencode._bencode_pyx')
 
 
-setup(ext_modules=ext_modules,
-      cmdclass={'build_ext': build_ext_if_possible})
+setup(ext_modules=ext_modules, cmdclass={'build_ext': build_ext})
