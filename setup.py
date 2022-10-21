@@ -73,7 +73,7 @@ def add_cython_extension(module_name, libraries=None, extra_source=[]):
         Extension(
             module_name, source, define_macros=define_macros,
             libraries=libraries, include_dirs=include_dirs,
-            optional=True))
+            optional=os.environ.get('CIBUILDWHEEL', '0') != '1'))
 
 
 add_cython_extension('fastbencode._bencode_pyx')
