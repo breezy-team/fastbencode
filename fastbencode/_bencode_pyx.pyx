@@ -59,7 +59,7 @@ from libc.string cimport (
 
 cdef extern from "python-compat.h":
     int snprintf(char* buffer, size_t nsize, char* fmt, ...)
-    # Use wrapper with inverted error return so Cython can propogate
+    # Use wrapper with inverted error return so Cython can propagate
     int BrzPy_EnterRecursiveCall(char *) except 0
 
 cdef extern from "Python.h":
