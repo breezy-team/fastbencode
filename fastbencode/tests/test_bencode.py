@@ -67,8 +67,7 @@ def iter_suite_tests(suite):
         yield suite
     elif isinstance(suite, TestSuite):
         for item in suite:
-            for r in iter_suite_tests(item):
-                yield r
+            yield from iter_suite_tests(item)
     else:
         raise Exception('unknown type %r for object %r'
                         % (type(suite), suite))
@@ -108,7 +107,7 @@ def apply_scenario(test, scenario):
         test.
     :return: The adapted test.
     """
-    new_id = "%s(%s)" % (test.id(), scenario[0])
+    new_id = "{}({})".format(test.id(), scenario[0])
     new_test = clone_test(test, new_id)
     for name, value in scenario[1].items():
         setattr(new_test, name, value)
@@ -211,7 +210,7 @@ def load_tests(loader, standard_tests, pattern):
         'fastbencode._bencode_pyx')
 
 
-class RecursionLimit(object):
+class RecursionLimit:
     """Context manager that lowers recursion limit for testing."""
 
     def __init__(self, limit=100):
@@ -343,7 +342,7 @@ class TestBencodeDecode(TestCase):
         self._run_check_error(TypeError, None)
         self._run_check_error(TypeError, lambda x: x)
         self._run_check_error(TypeError, object)
-        self._run_check_error(TypeError, u"ie")
+        self._run_check_error(TypeError, "ie")
 
     def test_decoder_type_error(self):
         self.assertRaises(TypeError, self.module.bdecode, 1)
