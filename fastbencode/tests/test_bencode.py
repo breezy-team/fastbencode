@@ -14,11 +14,10 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 
-"""Tests for bencode structured encoding"""
+"""Tests for bencode structured encoding."""
 
 import copy
 import sys
-
 from unittest import TestCase, TestSuite
 
 
@@ -62,15 +61,14 @@ def get_named_object(module_name, member_name=None):
 
 
 def iter_suite_tests(suite):
-    """Return all tests in a suite, recursing through nested suites"""
+    """Return all tests in a suite, recursing through nested suites."""
     if isinstance(suite, TestCase):
         yield suite
     elif isinstance(suite, TestSuite):
         for item in suite:
             yield from iter_suite_tests(item)
     else:
-        raise Exception('unknown type %r for object %r'
-                        % (type(suite), suite))
+        raise Exception(f'unknown type {type(suite)!r} for object {suite!r}')
 
 
 def clone_test(test, new_id):
@@ -107,7 +105,7 @@ def apply_scenario(test, scenario):
         test.
     :return: The adapted test.
     """
-    new_id = "{}({})".format(test.id(), scenario[0])
+    new_id = f"{test.id()}({scenario[0]})"
     new_test = clone_test(test, new_id)
     for name, value in scenario[1].items():
         setattr(new_test, name, value)
@@ -188,7 +186,6 @@ def permute_tests_for_extension(standard_tests, loader, py_module_name,
         tests. feature is the Feature object that can be used to determine if
         the module is available.
     """
-
     py_module = get_named_object(py_module_name)
     scenarios = [
         ('python', {'module': py_module}),
@@ -213,7 +210,7 @@ def load_tests(loader, standard_tests, pattern):
 class RecursionLimit:
     """Context manager that lowers recursion limit for testing."""
 
-    def __init__(self, limit=100):
+    def __init__(self, limit=100) -> None:
         self._new_limit = limit
         self._old_limit = sys.getrecursionlimit()
 

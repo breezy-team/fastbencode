@@ -16,12 +16,12 @@
 # Modifications copyright (C) 2008 Canonical Ltd
 
 
-from typing import Dict, Type, Callable, List
+from typing import Callable, Dict, List, Type
 
 
-class BDecoder(object):
+class BDecoder:
 
-    def __init__(self, yield_tuples=False):
+    def __init__(self, yield_tuples=False) -> None:
         """Constructor.
 
         :param yield_tuples: if true, decode "l" elements as tuples rather than
@@ -101,10 +101,10 @@ _tuple_decoder = BDecoder(True)
 bdecode_as_tuple = _tuple_decoder.bdecode
 
 
-class Bencached(object):
+class Bencached:
     __slots__ = ['bencoded']
 
-    def __init__(self, s):
+    def __init__(self, s) -> None:
         self.bencoded = s
 
 
