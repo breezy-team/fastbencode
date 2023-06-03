@@ -25,7 +25,7 @@ classifiers = [
 requires-python = ">=3.7"
 dynamic = ["version"]
 dependencies = []
- 
+
 [project.urls]
 Homepage = "https://github.com/breezy-team/fastbencode"
 GitHub = "https://github.com/breezy-team/fastbencode"
@@ -39,3 +39,32 @@ include-package-data = false
 
 [tool.setuptools.dynamic]
 version = {attr = "fastbencode.__version__"}
+
+[tool.ruff]
+select = [
+    "ANN",
+    "D",
+    "E",
+    "F",
+    "I",
+    "UP",
+]
+target-version = "py37"
+ignore = [
+    "ANN001",
+    "ANN002",
+    "ANN101",
+    "ANN201",
+    "ANN202",
+    "ANN204",
+    "D100",
+    "D101",
+    "D102",
+    "D103",
+    "D105",
+    "D107",
+]
+line-length = 79
+
+[tool.ruff.pydocstyle]
+convention = "google"
