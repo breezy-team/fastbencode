@@ -287,10 +287,16 @@ class TestBencodeDecode(TestCase):
 
     def test_list_deepnested(self):
         import platform
-        if platform.python_implementation() == 'PyPy':
-            self.skipTest('recursion not an issue on pypy')
-        with RecursionLimit():
-            self._run_check_error(RuntimeError, (b"l" * 100) + (b"e" * 100))
+        if (platform.python_implementation() == 'PyPy'
+                or sys.version_info[:2] >= (3, 12)):
+            expected = []
+            for i in range(99):
+                expected = [expected]
+            self._check(expected, (b"l" * 100) + (b"e" * 100))
+        else:
+            with RecursionLimit():
+                self._run_check_error(
+                    RuntimeError, (b"l" * 100) + (b"e" * 100))
 
     def test_malformed_list(self):
         self._run_check_error(ValueError, b'l')
