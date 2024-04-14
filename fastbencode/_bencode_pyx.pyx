@@ -46,15 +46,22 @@ from cpython.mem cimport (
     PyMem_Malloc,
     PyMem_Realloc,
     )
+from cpython.unicode cimport (
+    PyUnicode_FromEncodedObject,
+    PyUnicode_FromStringAndSize,
+    PyUnicode_Check,
+    )
 from cpython.tuple cimport (
     PyTuple_CheckExact,
     )
 
 from libc.stdlib cimport (
     strtol,
+    free,
     )
 from libc.string cimport (
     memcpy,
+    strdup,
     )
 
 cdef extern from "python-compat.h":
@@ -79,9 +86,10 @@ cdef class Decoder:
     cdef readonly char *tail
     cdef readonly int size
     cdef readonly int _yield_tuples
+    cdef readonly char *_bytestring_encoding
     cdef object text
 
-    def __init__(self, s, yield_tuples=0):
+    def __init__(self, s, yield_tuples=0, str bytestring_encoding=None):
         """Initialize decoder engine.
         @param  s:  Python string.
         """
@@ -92,6 +100,13 @@ cdef class Decoder:
         self.tail = PyBytes_AS_STRING(s)
         self.size = PyBytes_GET_SIZE(s)
         self._yield_tuples = int(yield_tuples)
+        if bytestring_encoding is None:
+            self._bytestring_encoding = NULL
+        else:
+            self._bytestring_encoding = strdup(bytestring_encoding.encode('utf-8'))
+
+    def __dealloc__(self):
+        free(self._bytestring_encoding)
 
     def decode(self):
         result = self._decode_object()
@@ -112,7 +127,7 @@ cdef class Decoder:
         try:
             ch = self.tail[0]
             if c'0' <= ch <= c'9':
-                return self._decode_string()
+                return self._decode_bytes()
             elif ch == c'l':
                 D_UPDATE_TAIL(self, 1)
                 return self._decode_list()
@@ -155,12 +170,12 @@ cdef class Decoder:
         D_UPDATE_TAIL(self, i+1)
         return ret
 
-    cdef object _decode_string(self):
+    cdef object _decode_bytes(self):
         cdef int n
         cdef char *next_tail
         # strtol allows leading whitespace, negatives, and leading zeros
         # however, all callers have already checked that '0' <= tail[0] <= '9'
-        # or they wouldn't have called _decode_string
+        # or they wouldn't have called _decode_bytes
         # strtol will stop at trailing whitespace, etc
         n = strtol(self.tail, &next_tail, 10)
         if next_tail == NULL or next_tail[0] != c':':
@@ -171,13 +186,22 @@ cdef class Decoder:
             raise ValueError('leading zeros are not allowed')
         D_UPDATE_TAIL(self, next_tail - self.tail + 1)
         if n == 0:
-            return b''
+            if self._bytestring_encoding == NULL:
+                return b''
+            else:
+                return ''
         if n > self.size:
             raise ValueError('stream underflow')
         if n < 0:
             raise ValueError('string size below zero: %d' % n)
 
-        result = PyBytes_FromStringAndSize(self.tail, n)
+        if self._bytestring_encoding == NULL:
+            result = PyBytes_FromStringAndSize(self.tail, n)
+        elif self._bytestring_encoding == b'utf-8':
+            result = PyUnicode_FromStringAndSize(self.tail, n)
+        else:
+            result = PyBytes_FromStringAndSize(self.tail, n)
+            result = PyUnicode_FromEncodedObject(result, self._bytestring_encoding, NULL)
         D_UPDATE_TAIL(self, n)
         return result
 
@@ -214,7 +238,7 @@ cdef class Decoder:
                 # keys should be strings only
                 if self.tail[0] < c'0' or self.tail[0] > c'9':
                     raise ValueError('key was not a simple string.')
-                key = self._decode_string()
+                key = self._decode_bytes()
                 if lastkey is not None and lastkey >= key:
                     raise ValueError('dict keys disordered')
                 else:
@@ -233,6 +257,11 @@ def bdecode(object s):
 def bdecode_as_tuple(object s):
     """Decode string x to Python object, using tuples rather than lists."""
     return Decoder(s, True).decode()
+
+
+def bdecode_utf8(object s):
+    """Decode string x to Python object, decoding bytestrings as UTF8 strings."""
+    return Decoder(s, bytestring_encoding='utf-8').decode()
 
 
 class Bencached(object):
@@ -254,8 +283,9 @@ cdef class Encoder:
     cdef readonly int size
     cdef readonly char *buffer
     cdef readonly int maxsize
+    cdef readonly object _bytestring_encoding
 
-    def __init__(self, int maxsize=INITSIZE):
+    def __init__(self, int maxsize=INITSIZE, str bytestring_encoding=None):
         """Initialize encoder engine
         @param  maxsize:    initial size of internal char buffer
         """
@@ -272,6 +302,8 @@ cdef class Encoder:
         self.buffer = p
         self.maxsize = maxsize
         self.tail = p
+
+        self._bytestring_encoding = bytestring_encoding
 
     def __dealloc__(self):
         PyMem_Free(self.buffer)
@@ -329,7 +361,7 @@ cdef class Encoder:
         E_UPDATE_TAIL(self, n)
         return 1
 
-    cdef int _encode_string(self, x) except 0:
+    cdef int _encode_bytes(self, x) except 0:
         cdef int n
         cdef Py_ssize_t x_len
         x_len = PyBytes_GET_SIZE(x)
@@ -340,6 +372,12 @@ cdef class Encoder:
         memcpy(<void *>(self.tail+n), PyBytes_AS_STRING(x), x_len)
         E_UPDATE_TAIL(self, n + x_len)
         return 1
+
+    cdef int _encode_string(self, x) except 0:
+        if self._bytestring_encoding is None:
+            raise TypeError("string found but no encoding specified. "
+                            "Use bencode_utf8 rather bencode?")
+        return self._encode_bytes(x.encode(self._bytestring_encoding))
 
     cdef int _encode_list(self, x) except 0:
         self._ensure_buffer(1)
@@ -362,7 +400,7 @@ cdef class Encoder:
         for k in sorted(x):
             if not PyBytes_CheckExact(k):
                 raise TypeError('key in dict should be string')
-            self._encode_string(k)
+            self._encode_bytes(k)
             self.process(x[k])
 
         self._ensure_buffer(1)
@@ -374,7 +412,7 @@ cdef class Encoder:
         BrzPy_EnterRecursiveCall(" while bencode encoding")
         try:
             if PyBytes_CheckExact(x):
-                self._encode_string(x)
+                self._encode_bytes(x)
             elif PyInt_CheckExact(x) and x.bit_length() < 32:
                 self._encode_int(x)
             elif PyLong_CheckExact(x):
@@ -385,6 +423,8 @@ cdef class Encoder:
                 self._encode_dict(x)
             elif PyBool_Check(x):
                 self._encode_int(int(x))
+            elif PyUnicode_Check(x):
+                self._encode_string(x)
             elif isinstance(x, Bencached):
                 self._append_string(x.bencoded)
             else:
@@ -394,7 +434,17 @@ cdef class Encoder:
 
 
 def bencode(x):
-    """Encode Python object x to string"""
+    """Encode Python object x to bytestring"""
     encoder = Encoder()
+    encoder.process(x)
+    return encoder.to_bytes()
+
+
+def bencode_utf8(x):
+    """Encode Python object x to bytestring.
+
+    Encode any strings as UTF8
+    """
+    encoder = Encoder(bytestring_encoding='utf-8')
     encoder.process(x)
     return encoder.to_bytes()

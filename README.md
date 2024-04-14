@@ -16,6 +16,12 @@ Example:
     >>> bdecode(bencode([1, 2, b'a', {b'd': 3}]))
     [1, 2, b'a', {b'd': 3}]
 
+The default ``bencode``/``bdecode`` functions just operate on
+bytestrings. Use ``bencode_utf8`` / ``bdecode_utf8`` to
+serialize/deserialize all plain strings as UTF-8 bytestrings.
+Note that for performance reasons, all dictionary keys still have to be
+bytestrings.
+
 License
 =======
 fastbencode is available under the GNU GPL, version 2 or later.
