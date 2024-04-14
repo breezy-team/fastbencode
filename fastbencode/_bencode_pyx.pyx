@@ -46,15 +46,21 @@ from cpython.mem cimport (
     PyMem_Malloc,
     PyMem_Realloc,
     )
+from cpython.unicode cimport (
+    PyUnicode_FromEncodedObject,
+    PyUnicode_FromStringAndSize,
+    )
 from cpython.tuple cimport (
     PyTuple_CheckExact,
     )
 
 from libc.stdlib cimport (
     strtol,
+    free,
     )
 from libc.string cimport (
     memcpy,
+    strdup,
     )
 
 cdef extern from "python-compat.h":
@@ -79,9 +85,10 @@ cdef class Decoder:
     cdef readonly char *tail
     cdef readonly int size
     cdef readonly int _yield_tuples
+    cdef readonly char *_bytestring_encoding
     cdef object text
 
-    def __init__(self, s, yield_tuples=0):
+    def __init__(self, s, yield_tuples=0, str bytestring_encoding=None):
         """Initialize decoder engine.
         @param  s:  Python string.
         """
@@ -92,6 +99,13 @@ cdef class Decoder:
         self.tail = PyBytes_AS_STRING(s)
         self.size = PyBytes_GET_SIZE(s)
         self._yield_tuples = int(yield_tuples)
+        if bytestring_encoding is None:
+            self._bytestring_encoding = NULL
+        else:
+            self._bytestring_encoding = strdup(bytestring_encoding.encode('utf-8'))
+
+    def __dealloc__(self):
+        free(self._bytestring_encoding)
 
     def decode(self):
         result = self._decode_object()
@@ -171,13 +185,22 @@ cdef class Decoder:
             raise ValueError('leading zeros are not allowed')
         D_UPDATE_TAIL(self, next_tail - self.tail + 1)
         if n == 0:
-            return b''
+            if self._bytestring_encoding == NULL:
+                return b''
+            else:
+                return ''
         if n > self.size:
             raise ValueError('stream underflow')
         if n < 0:
             raise ValueError('string size below zero: %d' % n)
 
-        result = PyBytes_FromStringAndSize(self.tail, n)
+        if self._bytestring_encoding == NULL:
+            result = PyBytes_FromStringAndSize(self.tail, n)
+        elif self._bytestring_encoding == b'utf-8':
+            result = PyUnicode_FromStringAndSize(self.tail, n)
+        else:
+            result = PyBytes_FromStringAndSize(self.tail, n)
+            result = PyUnicode_FromEncodedObject(result, self._bytestring_encoding, NULL)
         D_UPDATE_TAIL(self, n)
         return result
 
@@ -233,6 +256,11 @@ def bdecode(object s):
 def bdecode_as_tuple(object s):
     """Decode string x to Python object, using tuples rather than lists."""
     return Decoder(s, True).decode()
+
+
+def bdecode_utf8(object s):
+    """Decode string x to Python object, decoding bytestrings as UTF8 strings."""
+    return Decoder(s, bytestring_encoding='utf-8').decode()
 
 
 class Bencached(object):

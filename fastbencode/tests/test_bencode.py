@@ -351,6 +351,46 @@ class TestBencodeDecode(TestCase):
         self.assertRaises(TypeError, self.module.bdecode, 1)
 
 
+class TestBdecodeUtf8(TestCase):
+
+    module = None
+
+    def _check(self, expected, source):
+        self.assertEqual(expected, self.module.bdecode_utf8(source))
+
+    def _run_check_error(self, exc, bad):
+        """Check that bdecoding a string raises a particular exception."""
+        self.assertRaises(exc, self.module.bdecode_utf8, bad)
+
+    def test_string(self):
+        self._check('', b'0:')
+        self._check('aäc', b'4:a\xc3\xa4c')
+        self._check('1234567890', b'10:1234567890')
+
+    def test_large_string(self):
+        self.assertRaises(ValueError, self.module.bdecode_utf8, b"2147483639:foo")
+
+    def test_malformed_string(self):
+        self._run_check_error(ValueError, b'10:x')
+        self._run_check_error(ValueError, b'10:')
+        self._run_check_error(ValueError, b'10')
+        self._run_check_error(ValueError, b'01:x')
+        self._run_check_error(ValueError, b'00:')
+        self._run_check_error(ValueError, b'35208734823ljdahflajhdf')
+        self._run_check_error(ValueError, b'432432432432432:foo')
+        self._run_check_error(ValueError, b' 1:x')  # leading whitespace
+        self._run_check_error(ValueError, b'-1:x')  # negative
+        self._run_check_error(ValueError, b'1 x')  # space vs colon
+        self._run_check_error(ValueError, b'1x')  # missing colon
+        self._run_check_error(ValueError, (b'1' * 1000) + b':')
+
+    def test_empty_string(self):
+        self.assertRaises(ValueError, self.module.bdecode_utf8, b'')
+
+    def test_invalid_utf8(self):
+        self._run_check_error(UnicodeDecodeError, b'3:\xff\xfe\xfd')
+
+
 class TestBencodeEncode(TestCase):
 
     module = None

@@ -21,13 +21,14 @@ from typing import Callable, Dict, List, Type
 
 class BDecoder:
 
-    def __init__(self, yield_tuples=False) -> None:
+    def __init__(self, yield_tuples=False, bytestring_encoding=None) -> None:
         """Constructor.
 
         :param yield_tuples: if true, decode "l" elements as tuples rather than
             lists.
         """
         self.yield_tuples = yield_tuples
+        self.bytestring_encoding = bytestring_encoding
         decode_func = {}
         decode_func[b'l'] = self.decode_list
         decode_func[b'd'] = self.decode_dict
@@ -60,7 +61,10 @@ class BDecoder:
         if x[f:f + 1] == b'0' and colon != f + 1:
             raise ValueError
         colon += 1
-        return (x[colon:colon + n], colon + n)
+        d = x[colon:colon + n]
+        if self.bytestring_encoding:
+            d = d.decode(self.bytestring_encoding)
+        return (d, colon + n)
 
     def decode_list(self, x, f):
         r, f = [], f + 1
@@ -99,6 +103,9 @@ bdecode = _decoder.bdecode
 
 _tuple_decoder = BDecoder(True)
 bdecode_as_tuple = _tuple_decoder.bdecode
+
+_utf8_decoder = BDecoder(bytestring_encoding='utf-8')
+bdecode_utf8 = _utf8_decoder.bdecode
 
 
 class Bencached:
