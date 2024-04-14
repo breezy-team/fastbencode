@@ -368,7 +368,8 @@ class TestBdecodeUtf8(TestCase):
         self._check('1234567890', b'10:1234567890')
 
     def test_large_string(self):
-        self.assertRaises(ValueError, self.module.bdecode_utf8, b"2147483639:foo")
+        self.assertRaises(
+            ValueError, self.module.bdecode_utf8, b"2147483639:foo")
 
     def test_malformed_string(self):
         self._run_check_error(ValueError, b'10:x')
@@ -454,3 +455,32 @@ class TestBencodeEncode(TestCase):
     def test_bool(self):
         self._check(b'i1e', True)
         self._check(b'i0e', False)
+
+
+class TestBencodeEncodeUtf8(TestCase):
+
+    module = None
+
+    def _check(self, expected, source):
+        self.assertEqual(expected, self.module.bencode_utf8(source))
+
+    def test_string(self):
+        self._check(b'0:', '')
+        self._check(b'3:abc', 'abc')
+        self._check(b'10:1234567890', '1234567890')
+
+    def test_list(self):
+        self._check(b'le', [])
+        self._check(b'li1ei2ei3ee', [1, 2, 3])
+        self._check(b'll5:Alice3:Bobeli2ei3eee', [['Alice', 'Bob'], [2, 3]])
+
+    def test_list_as_tuple(self):
+        self._check(b'le', ())
+        self._check(b'li1ei2ei3ee', (1, 2, 3))
+        self._check(b'll5:Alice3:Bobeli2ei3eee', (('Alice', 'Bob'), (2, 3)))
+
+    def test_dict(self):
+        self._check(b'de', {})
+        self._check(b'd3:agei25e4:eyes4:bluee', {b'age': 25, b'eyes': 'blue'})
+        self._check(b'd8:spam.mp3d6:author5:Alice6:lengthi100000eee',
+                    {b'spam.mp3': {b'author': b'Alice', b'length': 100000}})

@@ -115,55 +115,72 @@ class Bencached:
         self.bencoded = s
 
 
-def encode_bencached(x, r):
-    r.append(x.bencoded)
+class BEncoder:
+
+    def __init__(self, bytestring_encoding=None):
+        self.bytestring_encoding = bytestring_encoding
+        self.encode_func: Dict[Type, Callable[[object, List[bytes]], None]] = {
+            Bencached: self.encode_bencached,
+            int: self.encode_int,
+            bytes: self.encode_bytes,
+            list: self.encode_list,
+            tuple: self.encode_list,
+            dict: self.encode_dict,
+            bool: self.encode_bool,
+            str: self.encode_str,
+        }
+
+    def encode_bencached(self, x, r):
+        r.append(x.bencoded)
 
 
-def encode_bool(x, r):
-    encode_int(int(x), r)
+    def encode_bool(self, x, r):
+        self.encode_int(int(x), r)
 
 
-def encode_int(x, r):
-    r.extend((b'i', int_to_bytes(x), b'e'))
+    def encode_int(self, x, r):
+        r.extend((b'i', int_to_bytes(x), b'e'))
 
 
-def encode_bytes(x, r):
-    r.extend((int_to_bytes(len(x)), b':', x))
+    def encode_bytes(self, x, r):
+        r.extend((int_to_bytes(len(x)), b':', x))
+
+    def encode_list(self, x, r):
+        r.append(b'l')
+        for i in x:
+            self.encode(i, r)
+        r.append(b'e')
 
 
-def encode_list(x, r):
-    r.append(b'l')
-    for i in x:
-        encode_func[type(i)](i, r)
-    r.append(b'e')
+    def encode_dict(self, x, r):
+        r.append(b'd')
+        ilist = sorted(x.items())
+        for k, v in ilist:
+            r.extend((int_to_bytes(len(k)), b':', k))
+            self.encode(v, r)
+        r.append(b'e')
 
+    def encode_str(self, x, r):
+        if self.bytestring_encoding is None:
+            raise TypeError("string found but no encoding specified. "
+                            "Use bencode_utf8 rather bencode?")
+        return self.encode_bytes(x.encode(self.bytestring_encoding), r)
 
-def encode_dict(x, r):
-    r.append(b'd')
-    ilist = sorted(x.items())
-    for k, v in ilist:
-        r.extend((int_to_bytes(len(k)), b':', k))
-        encode_func[type(v)](v, r)
-    r.append(b'e')
-
-
-encode_func: Dict[Type, Callable[[object, List[bytes]], None]] = {}
-encode_func[type(Bencached(0))] = encode_bencached
-encode_func[int] = encode_int
+    def encode(self, x, r):
+        self.encode_func[type(x)](x, r)
 
 
 def int_to_bytes(n):
     return b'%d' % n
 
-
-encode_func[bytes] = encode_bytes
-encode_func[list] = encode_list
-encode_func[tuple] = encode_list
-encode_func[dict] = encode_dict
-encode_func[bool] = encode_bool
-
-
 def bencode(x):
     r = []
-    encode_func[type(x)](x, r)
+    encoder = BEncoder()
+    encoder.encode(x, r)
+    return b''.join(r)
+
+def bencode_utf8(x):
+    r = []
+    encoder = BEncoder(bytestring_encoding='utf-8')
+    encoder.encode(x, r)
     return b''.join(r)

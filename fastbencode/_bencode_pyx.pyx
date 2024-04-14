@@ -49,6 +49,7 @@ from cpython.mem cimport (
 from cpython.unicode cimport (
     PyUnicode_FromEncodedObject,
     PyUnicode_FromStringAndSize,
+    PyUnicode_Check,
     )
 from cpython.tuple cimport (
     PyTuple_CheckExact,
@@ -282,8 +283,9 @@ cdef class Encoder:
     cdef readonly int size
     cdef readonly char *buffer
     cdef readonly int maxsize
+    cdef readonly object _bytestring_encoding
 
-    def __init__(self, int maxsize=INITSIZE):
+    def __init__(self, int maxsize=INITSIZE, str bytestring_encoding=None):
         """Initialize encoder engine
         @param  maxsize:    initial size of internal char buffer
         """
@@ -300,6 +302,8 @@ cdef class Encoder:
         self.buffer = p
         self.maxsize = maxsize
         self.tail = p
+
+        self._bytestring_encoding = bytestring_encoding
 
     def __dealloc__(self):
         PyMem_Free(self.buffer)
@@ -369,6 +373,12 @@ cdef class Encoder:
         E_UPDATE_TAIL(self, n + x_len)
         return 1
 
+    cdef int _encode_string(self, x) except 0:
+        if self._bytestring_encoding is None:
+            raise TypeError("string found but no encoding specified. "
+                            "Use bencode_utf8 rather bencode?")
+        return self._encode_bytes(x.encode(self._bytestring_encoding))
+
     cdef int _encode_list(self, x) except 0:
         self._ensure_buffer(1)
         self.tail[0] = c'l'
@@ -413,6 +423,8 @@ cdef class Encoder:
                 self._encode_dict(x)
             elif PyBool_Check(x):
                 self._encode_int(int(x))
+            elif PyUnicode_Check(x):
+                self._encode_string(x)
             elif isinstance(x, Bencached):
                 self._append_string(x.bencoded)
             else:
@@ -422,7 +434,17 @@ cdef class Encoder:
 
 
 def bencode(x):
-    """Encode Python object x to string"""
+    """Encode Python object x to bytestring"""
     encoder = Encoder()
+    encoder.process(x)
+    return encoder.to_bytes()
+
+
+def bencode_utf8(x):
+    """Encode Python object x to bytestring.
+
+    Encode any strings as UTF8
+    """
+    encoder = Encoder(bytestring_encoding='utf-8')
     encoder.process(x)
     return encoder.to_bytes()
