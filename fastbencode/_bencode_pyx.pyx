@@ -112,7 +112,7 @@ cdef class Decoder:
         try:
             ch = self.tail[0]
             if c'0' <= ch <= c'9':
-                return self._decode_string()
+                return self._decode_bytes()
             elif ch == c'l':
                 D_UPDATE_TAIL(self, 1)
                 return self._decode_list()
@@ -155,12 +155,12 @@ cdef class Decoder:
         D_UPDATE_TAIL(self, i+1)
         return ret
 
-    cdef object _decode_string(self):
+    cdef object _decode_bytes(self):
         cdef int n
         cdef char *next_tail
         # strtol allows leading whitespace, negatives, and leading zeros
         # however, all callers have already checked that '0' <= tail[0] <= '9'
-        # or they wouldn't have called _decode_string
+        # or they wouldn't have called _decode_bytes
         # strtol will stop at trailing whitespace, etc
         n = strtol(self.tail, &next_tail, 10)
         if next_tail == NULL or next_tail[0] != c':':
@@ -214,7 +214,7 @@ cdef class Decoder:
                 # keys should be strings only
                 if self.tail[0] < c'0' or self.tail[0] > c'9':
                     raise ValueError('key was not a simple string.')
-                key = self._decode_string()
+                key = self._decode_bytes()
                 if lastkey is not None and lastkey >= key:
                     raise ValueError('dict keys disordered')
                 else:
@@ -329,7 +329,7 @@ cdef class Encoder:
         E_UPDATE_TAIL(self, n)
         return 1
 
-    cdef int _encode_string(self, x) except 0:
+    cdef int _encode_bytes(self, x) except 0:
         cdef int n
         cdef Py_ssize_t x_len
         x_len = PyBytes_GET_SIZE(x)
@@ -362,7 +362,7 @@ cdef class Encoder:
         for k in sorted(x):
             if not PyBytes_CheckExact(k):
                 raise TypeError('key in dict should be string')
-            self._encode_string(k)
+            self._encode_bytes(k)
             self.process(x[k])
 
         self._ensure_buffer(1)
@@ -374,7 +374,7 @@ cdef class Encoder:
         BrzPy_EnterRecursiveCall(" while bencode encoding")
         try:
             if PyBytes_CheckExact(x):
-                self._encode_string(x)
+                self._encode_bytes(x)
             elif PyInt_CheckExact(x) and x.bit_length() < 32:
                 self._encode_int(x)
             elif PyLong_CheckExact(x):

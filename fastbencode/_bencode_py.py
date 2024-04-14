@@ -32,16 +32,16 @@ class BDecoder:
         decode_func[b'l'] = self.decode_list
         decode_func[b'd'] = self.decode_dict
         decode_func[b'i'] = self.decode_int
-        decode_func[b'0'] = self.decode_string
-        decode_func[b'1'] = self.decode_string
-        decode_func[b'2'] = self.decode_string
-        decode_func[b'3'] = self.decode_string
-        decode_func[b'4'] = self.decode_string
-        decode_func[b'5'] = self.decode_string
-        decode_func[b'6'] = self.decode_string
-        decode_func[b'7'] = self.decode_string
-        decode_func[b'8'] = self.decode_string
-        decode_func[b'9'] = self.decode_string
+        decode_func[b'0'] = self.decode_bytes
+        decode_func[b'1'] = self.decode_bytes
+        decode_func[b'2'] = self.decode_bytes
+        decode_func[b'3'] = self.decode_bytes
+        decode_func[b'4'] = self.decode_bytes
+        decode_func[b'5'] = self.decode_bytes
+        decode_func[b'6'] = self.decode_bytes
+        decode_func[b'7'] = self.decode_bytes
+        decode_func[b'8'] = self.decode_bytes
+        decode_func[b'9'] = self.decode_bytes
         self.decode_func = decode_func
 
     def decode_int(self, x, f):
@@ -54,7 +54,7 @@ class BDecoder:
             raise ValueError
         return (n, newf + 1)
 
-    def decode_string(self, x, f):
+    def decode_bytes(self, x, f):
         colon = x.index(b':', f)
         n = int(x[f:colon])
         if x[f:f + 1] == b'0' and colon != f + 1:
@@ -75,7 +75,7 @@ class BDecoder:
         r, f = {}, f + 1
         lastkey = None
         while x[f:f + 1] != b'e':
-            k, f = self.decode_string(x, f)
+            k, f = self.decode_bytes(x, f)
             if lastkey is not None and lastkey >= k:
                 raise ValueError
             lastkey = k
@@ -120,7 +120,7 @@ def encode_int(x, r):
     r.extend((b'i', int_to_bytes(x), b'e'))
 
 
-def encode_string(x, r):
+def encode_bytes(x, r):
     r.extend((int_to_bytes(len(x)), b':', x))
 
 
@@ -149,7 +149,7 @@ def int_to_bytes(n):
     return b'%d' % n
 
 
-encode_func[bytes] = encode_string
+encode_func[bytes] = encode_bytes
 encode_func[list] = encode_list
 encode_func[tuple] = encode_list
 encode_func[dict] = encode_dict
