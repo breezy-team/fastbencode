@@ -42,6 +42,10 @@ include-package-data = false
 version = {attr = "fastbencode.__version__"}
 
 [tool.ruff]
+target-version = "py37"
+line-length = 79
+
+[tool.ruff.lint]
 select = [
     "ANN",
     "D",
@@ -50,7 +54,6 @@ select = [
     "I",
     "UP",
 ]
-target-version = "py37"
 ignore = [
     "ANN001",
     "ANN002",
@@ -65,7 +68,6 @@ ignore = [
     "D105",
     "D107",
 ]
-line-length = 79
 
-[tool.ruff.pydocstyle]
+[tool.ruff.lint.pydocstyle]
 convention = "google"

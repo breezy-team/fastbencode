@@ -28,8 +28,8 @@ else:
     cython_version_info = Version(cython_version)
     if cython_version_info < Version(minimum_cython_version):
         print("Version of Cython is too old. "
-              "Current is {}, need at least {}.".format(
-                  cython_version, minimum_cython_version))
+              f"Current is {cython_version}, "
+              f"need at least {minimum_cython_version}.")
         print("If the .c files are available, they will be built,"
               " but modifying the .pyx files will not rebuild them.")
         have_cython = False
