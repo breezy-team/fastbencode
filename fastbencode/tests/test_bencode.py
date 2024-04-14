@@ -341,7 +341,7 @@ class TestBencodeDecode(TestCase):
         self.assertRaises(ValueError, self.module.bdecode, b'relwjhrlewjh')
 
     def test_unsupported_type(self):
-        self._run_check_error(TypeError, float(1.5))
+        self._run_check_error(TypeError, 1.5)
         self._run_check_error(TypeError, None)
         self._run_check_error(TypeError, lambda x: x)
         self._run_check_error(TypeError, object)
