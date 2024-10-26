@@ -14,6 +14,7 @@
 # included in all copies or substantial portions of the Software.
 #
 # Modifications copyright (C) 2008 Canonical Ltd
+# Modifications copyright (C) 2021-2023 Jelmer Vernooĳ
 
 
 from typing import Callable, Dict, List, Type
