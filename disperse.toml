@@ -1,0 +1,8 @@
+tag-name = "v$VERSION"
+verify-command = "python3 -m unittest fastbencode.tests.test_suite"
+tarball-location = []
+release-timeout = 5
+
+[[update_version]]
+path = "fastbencode/__init__.py"
+new-line = "__version__ = $TUPLED_VERSION"
