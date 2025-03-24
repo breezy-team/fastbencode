@@ -33,7 +33,7 @@ GitHub = "https://github.com/breezy-team/fastbencode"
 [project.optional-dependencies]
 cext = ["cython>=0.29"]
 dev = [
-    "ruff==0.11.0"
+    "ruff==0.11.2"
 ]
 
 [tool.setuptools]
