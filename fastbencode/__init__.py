@@ -49,9 +49,10 @@ def failed_to_load_extension(exception):
     exception_str = str(exception)
     if exception_str not in _extension_load_failures:
         import warnings
+
         warnings.warn(
-            f'failed to load compiled extension: {exception_str}',
-            UserWarning)
+            f"failed to load compiled extension: {exception_str}", UserWarning
+        )
         _extension_load_failures.append(exception_str)
 
 
