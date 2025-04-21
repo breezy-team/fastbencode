@@ -31,16 +31,13 @@ from cpython.bytes cimport (
 from cpython.dict cimport (
     PyDict_CheckExact,
     )
-from cpython.int cimport (
-    PyInt_CheckExact,
-    PyInt_FromString,
-    )
 from cpython.list cimport (
     PyList_CheckExact,
     PyList_Append,
     )
 from cpython.long cimport (
     PyLong_CheckExact,
+    PyLong_FromString,
     )
 from cpython.mem cimport (
     PyMem_Free,
@@ -165,7 +162,7 @@ cdef class Decoder:
         i = self._read_digits(c'e')
         self.tail[i] = 0
         try:
-            ret = PyInt_FromString(self.tail, NULL, 10)
+            ret = PyLong_FromString(self.tail, NULL, 10)
         finally:
             self.tail[i] = c'e'
         D_UPDATE_TAIL(self, i+1)
@@ -414,7 +411,7 @@ cdef class Encoder:
         try:
             if PyBytes_CheckExact(x):
                 self._encode_bytes(x)
-            elif PyInt_CheckExact(x) and x.bit_length() < 32:
+            elif PyLong_CheckExact(x) and x.bit_length() < 32:
                 self._encode_int(x)
             elif PyLong_CheckExact(x):
                 self._encode_long(x)
