@@ -321,6 +321,9 @@ class TestBencodeDecode(TestCase):
         )
 
     def test_dict_deepnested(self):
+        if self.id().endswith("(C)") and sys.version_info >= (3, 12):
+            self.skipTest("Python 3.12+ does not limit recursion in C code")
+
         with RecursionLimit():
             self._run_check_error(
                 RuntimeError, (b"d0:" * 1000) + b"i1e" + (b"e" * 1000)
@@ -432,6 +435,9 @@ class TestBencodeEncode(TestCase):
         self._check(b"ll5:Alice3:Bobeli2ei3eee", ((b"Alice", b"Bob"), (2, 3)))
 
     def test_list_deep_nested(self):
+        if self.id().endswith("(C)") and sys.version_info >= (3, 12):
+            self.skipTest("Python 3.12+ does not limit recursion in C code")
+
         top = []
         lst = top
         for unused_i in range(1000):
@@ -449,6 +455,9 @@ class TestBencodeEncode(TestCase):
         )
 
     def test_dict_deep_nested(self):
+        if self.id().endswith("(C)") and sys.version_info >= (3, 12):
+            self.skipTest("Python 3.12+ does not limit recursion in C code")
+
         d = top = {}
         for i in range(1000):
             d[b""] = {}

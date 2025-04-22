@@ -25,7 +25,15 @@ jobs:
     - name: Style checks
       run: |
         python -m ruff check .
-    - name: Test suite run
+    - name: Test suite run (pure Python)
+      run: |
+        python -m unittest fastbencode.tests.test_suite
+      env:
+        PYTHONHASHSEED: random
+    - name: Install in editable mode
+      run: |
+        pip install -e .
+    - name: Test suite run (with C extension)
       run: |
         python -m unittest fastbencode.tests.test_suite
       env:
