@@ -19,7 +19,7 @@
 
 from typing import Type
 
-__version__ = (0, 3, 1)
+__version__ = (0, 3, 2)
 
 
 _extension_load_failures = []
