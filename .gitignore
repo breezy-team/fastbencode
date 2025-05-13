@@ -6,6 +6,9 @@ fastbencode.egg-info
 dist
 *~
 .mypy_cache
+*.swp
+*.swo
+*.swn
 
 # Rust
 target/

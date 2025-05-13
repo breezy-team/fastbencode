@@ -120,20 +120,24 @@ impl Decoder {
         // Move past the 'e'
         self.position += 1;
 
-        let result = unsafe { pyo3_ffi::PyLong_FromString(
-            digits.as_ptr() as *const std::ffi::c_char,
-            std::ptr::null_mut(),
-            10,
-        ) };
-
-        if result != std::ptr::null_mut() {
-            // Retrieve the last python error
-            return Err(PyValueError::new_err("invalid integer"));
+        // Check for negative zero
+        if digits == "-0" {
+            return Err(PyValueError::new_err("negative zero not allowed"));
         }
 
-        // Convert *mut PyObject to Bound<PyInt>
-        let result = unsafe { Bound::from_owned_ptr(py, result) };
-        Ok(result)
+        // Parse the integer directly
+        let parsed_int = match digits.parse::<i64>() {
+            Ok(n) => n.to_object(py).into_bound(py),
+            Err(_) => {
+                // For very large integers, fallback to Python's conversion
+                let py_str = PyString::new(py, &digits);
+
+                let int_type = py.get_type::<PyInt>();
+                int_type.call1((py_str,))?
+            }
+        };
+
+        Ok(parsed_int.into_any())
     }
 
     fn decode_bytes<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {

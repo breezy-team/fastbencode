@@ -11,27 +11,24 @@ fastbencode is an implementation of the bencode serialization format originally 
 ### Building and Installing
 
 ```bash
-# Install in development mode with Rust extension
-pip install -e .[rust]
-
 # Install in development mode without Rust extension (pure Python)
-pip install -e .
+pip3 install -e .
 
 # Build the Rust extension
-python -m pip install -e .[rust]
+python3 setup.py build_ext --inplace
 ```
 
 ### Running Tests
 
 ```bash
 # Run all tests (both Python and Rust implementations)
-python -m unittest fastbencode.tests.test_suite
+PYTHONPATH=. python3 -m unittest fastbencode.tests.test_suite
 
 # Run specific test file
-python -m unittest fastbencode.tests.test_bencode
+PYTHONPATH=. python3 -m unittest fastbencode.tests.test_bencode
 
 # Run a specific test
-python -m unittest fastbencode.tests.test_bencode.TestBencodeDecode.test_int
+PYTHONPATH=. python3 -m unittest fastbencode.tests.test_bencode.TestBencodeDecode.test_int
 ```
 
 ### Linting
