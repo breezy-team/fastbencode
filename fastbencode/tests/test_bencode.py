@@ -207,7 +207,7 @@ def load_tests(loader, standard_tests, pattern):
         standard_tests,
         loader,
         "fastbencode._bencode_py",
-        "fastbencode._bencode_pyx",
+        "fastbencode._bencode_rs",
     )
 
 

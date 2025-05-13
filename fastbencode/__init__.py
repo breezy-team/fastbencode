@@ -15,7 +15,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 
-"""Wrapper around the bencode cython and python implementation."""
+"""Wrapper around the bencode Rust and Python implementations."""
 
 from typing import Type
 
@@ -59,12 +59,15 @@ def failed_to_load_extension(exception):
 Bencached: Type
 
 try:
-    from ._bencode_pyx import Bencached, bdecode, bdecode_as_tuple, bencode
+    from fastbencode._bencode_rs import Bencached, bdecode, bdecode_as_tuple, bencode, bdecode_utf8, bencode_utf8
 except ImportError as e:
     failed_to_load_extension(e)
+    # Fall back to pure Python implementation
     from ._bencode_py import (  # noqa: F401
         Bencached,
         bdecode,
         bdecode_as_tuple,
+        bdecode_utf8,
         bencode,
+        bencode_utf8,
     )
