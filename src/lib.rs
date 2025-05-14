@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict, PyList, PyTuple, PyString, PyInt};
+use pyo3::types::{PyBytes, PyDict, PyInt, PyList, PyString, PyTuple};
 
 #[pyclass]
 struct Bencached {
@@ -32,7 +32,11 @@ struct Decoder {
 #[pymethods]
 impl Decoder {
     #[new]
-    fn new(s: &Bound<PyBytes>, yield_tuples: Option<bool>, bytestring_encoding: Option<String>) -> Self {
+    fn new(
+        s: &Bound<PyBytes>,
+        yield_tuples: Option<bool>,
+        bytestring_encoding: Option<String>,
+    ) -> Self {
         Decoder {
             data: s.as_bytes().to_vec(),
             position: 0,
@@ -360,9 +364,11 @@ impl Encoder {
         self.buffer.push(b'd');
 
         // Get all keys and sort them
-        let mut keys: Vec<Bound<PyBytes>> = dict.keys().iter().map(|key| {
-            key.extract::<Bound<PyBytes>>()
-        }).collect::<PyResult<Vec<_>>>()?;
+        let mut keys: Vec<Bound<PyBytes>> = dict
+            .keys()
+            .iter()
+            .map(|key| key.extract::<Bound<PyBytes>>())
+            .collect::<PyResult<Vec<_>>>()?;
         keys.sort_by(|a, b| {
             let a_str = a.extract::<&[u8]>().unwrap();
             let b_str = b.extract::<&[u8]>().unwrap();

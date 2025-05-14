@@ -31,12 +31,6 @@ jobs:
           python -m unittest fastbencode.tests.test_suite
         env:
           PYTHONHASHSEED: random
-      - name: Install Rust
-        uses: actions-rs/toolchain@v2
-        with:
-          toolchain: stable
-          override: true
-          components: clippy
       - name: Run cargo fmt
         run: |
           cargo fmt --all -- --check

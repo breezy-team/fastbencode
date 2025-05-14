@@ -59,7 +59,14 @@ def failed_to_load_extension(exception):
 Bencached: Type
 
 try:
-    from fastbencode._bencode_rs import Bencached, bdecode, bdecode_as_tuple, bencode, bdecode_utf8, bencode_utf8
+    from fastbencode._bencode_rs import (
+        Bencached,
+        bdecode,
+        bdecode_as_tuple,
+        bdecode_utf8,
+        bencode,
+        bencode_utf8,
+    )
 except ImportError as e:
     failed_to_load_extension(e)
     # Fall back to pure Python implementation
