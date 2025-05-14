@@ -1,16 +1,16 @@
 [build-system]
 requires = [
     "setuptools>=61.2",
-    "cython>=0.29",
+    "setuptools-rust>=1.0.0",
 ]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "fastbencode"
-description = "Implementation of bencode with optional fast C extensions"
+description = "Implementation of bencode with optional fast Rust extensions"
 maintainers = [{name = "Breezy Developers", email = "breezy-core@googlegroups.com"}]
 readme = "README.md"
-license = {text = "GPLv2 or later"}
+license = "GPL-2.0-or-later"
 classifiers = [
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
@@ -31,7 +31,7 @@ Homepage = "https://github.com/breezy-team/fastbencode"
 GitHub = "https://github.com/breezy-team/fastbencode"
 
 [project.optional-dependencies]
-cext = ["cython>=0.29"]
+rust = ["setuptools-rust>=1.0.0"]
 dev = [
     "ruff==0.11.9"
 ]

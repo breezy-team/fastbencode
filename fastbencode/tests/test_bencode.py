@@ -207,7 +207,7 @@ def load_tests(loader, standard_tests, pattern):
         standard_tests,
         loader,
         "fastbencode._bencode_py",
-        "fastbencode._bencode_pyx",
+        "fastbencode._bencode_rs",
     )
 
 
@@ -293,7 +293,7 @@ class TestBencodeDecode(TestCase):
 
         if platform.python_implementation() == "PyPy" or sys.version_info[
             :2
-        ] >= (3, 12):
+            ] >= (3, 12) or self.id().endswith("(C)"):
             expected = []
             for i in range(99):
                 expected = [expected]
@@ -321,8 +321,8 @@ class TestBencodeDecode(TestCase):
         )
 
     def test_dict_deepnested(self):
-        if self.id().endswith("(C)") and sys.version_info >= (3, 12):
-            self.skipTest("Python 3.12+ does not limit recursion in C code")
+        if self.id().endswith("(C)"):
+            self.skipTest("no limit recursion in Rust code")
 
         with RecursionLimit():
             self._run_check_error(
@@ -435,8 +435,8 @@ class TestBencodeEncode(TestCase):
         self._check(b"ll5:Alice3:Bobeli2ei3eee", ((b"Alice", b"Bob"), (2, 3)))
 
     def test_list_deep_nested(self):
-        if self.id().endswith("(C)") and sys.version_info >= (3, 12):
-            self.skipTest("Python 3.12+ does not limit recursion in C code")
+        if self.id().endswith("(C)"):
+            self.skipTest("no limit recursion in Rust code")
 
         top = []
         lst = top
@@ -455,8 +455,8 @@ class TestBencodeEncode(TestCase):
         )
 
     def test_dict_deep_nested(self):
-        if self.id().endswith("(C)") and sys.version_info >= (3, 12):
-            self.skipTest("Python 3.12+ does not limit recursion in C code")
+        if self.id().endswith("(C)"):
+            self.skipTest("no limit of recursion in Rust code")
 
         d = top = {}
         for i in range(1000):
