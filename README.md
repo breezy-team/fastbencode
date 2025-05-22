@@ -29,6 +29,6 @@ fastbencode is available under the GNU GPL, version 2 or later.
 Copyright
 =========
 
-* Original Pure-Python bencoder (c) Petru Paler
-* Rust implementation (c) Jelmer Vernooĳ
+* Original Pure-Python bencoder © Petru Paler
 * Split out from Bazaar/Breezy by Jelmer Vernooĳ
+* Rust extension © Jelmer Vernooĳ
