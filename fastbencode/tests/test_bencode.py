@@ -291,9 +291,11 @@ class TestBencodeDecode(TestCase):
     def test_list_deepnested(self):
         import platform
 
-        if platform.python_implementation() == "PyPy" or sys.version_info[
-            :2
-            ] >= (3, 12) or self.id().endswith("(C)"):
+        if (
+            platform.python_implementation() == "PyPy"
+            or sys.version_info[:2] >= (3, 12)
+            or self.id().endswith("(C)")
+        ):
             expected = []
             for i in range(99):
                 expected = [expected]

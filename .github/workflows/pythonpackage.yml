@@ -26,6 +26,7 @@ jobs:
       - name: Style checks
         run: |
           python -m ruff check .
+          python -m ruff format --check .
       - name: Test suite run (pure Python)
         run: |
           python -m unittest fastbencode.tests.test_suite
