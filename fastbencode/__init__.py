@@ -35,9 +35,7 @@ try:
 except ModuleNotFoundError as e:
     import warnings
 
-    warnings.warn(
-        f"failed to load compiled extension: {e}", UserWarning
-    )
+    warnings.warn(f"failed to load compiled extension: {e}", UserWarning)
 
     # Fall back to pure Python implementation
     from ._bencode_py import (  # noqa: F401
