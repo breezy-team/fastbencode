@@ -24,7 +24,7 @@ bytestrings.
 
 License
 =======
-fastbencode is available under the GNU GPL, version 2 or later.
+fastbencode is available under the Apache License, version 2.
 
 Copyright
 =========
