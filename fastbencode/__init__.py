@@ -18,7 +18,7 @@
 
 from typing import Type
 
-__version__ = (0, 3, 3)
+__version__ = (0, 3, 4)
 
 
 Bencached: Type
