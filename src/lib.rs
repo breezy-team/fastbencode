@@ -131,7 +131,7 @@ impl Decoder {
 
         // Parse the integer directly
         let parsed_int = match digits.parse::<i64>() {
-            Ok(n) => n.to_object(py).into_bound(py),
+            Ok(n) => n.into_pyobject(py)?.into_any(),
             Err(_) => {
                 // For very large integers, fallback to Python's conversion
                 let py_str = PyString::new(py, &digits);
