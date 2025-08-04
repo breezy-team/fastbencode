@@ -10,7 +10,7 @@ name = "fastbencode"
 description = "Implementation of bencode with optional fast Rust extensions"
 maintainers = [{name = "Breezy Developers", email = "breezy-core@googlegroups.com"}]
 readme = "README.md"
-license = "GPL-2.0-or-later"
+license = "Apache-2.0"
 classifiers = [
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
