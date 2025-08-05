@@ -1,12 +1,13 @@
 [package]
 name = "fastbencode"
-version = "0.3.4"
+version = "0.3.5"
 edition = "2021"
 authors = ["Jelmer Vernooĳ <jelmer@jelmer.uk>"]
 license = "Apache-2.0"
 description = "Implementation of bencode with Rust implementation"
 readme = "README.md"
 repository = "https://github.com/breezy-team/fastbencode"
+publish = false
 
 [lib]
 name = "fastbencode__bencode_rs"
