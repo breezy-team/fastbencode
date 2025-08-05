@@ -29,7 +29,7 @@ jobs:
           python -m ruff format --check .
       - name: Test suite run (pure Python)
         run: |
-          python -m unittest fastbencode.tests.test_suite
+          python -m unittest tests.test_suite
         env:
           PYTHONHASHSEED: random
       - name: Run cargo fmt
@@ -38,8 +38,8 @@ jobs:
       - name: Install in editable mode
         run: |
           pip install -e .
-      - name: Test suite run (with C extension)
+      - name: Test suite run (with Rust extension)
         run: |
-          python -m unittest fastbencode.tests.test_suite
+          python -m unittest tests.test_suite
         env:
           PYTHONHASHSEED: random
