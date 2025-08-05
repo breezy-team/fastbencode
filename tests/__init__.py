@@ -24,7 +24,7 @@ def test_suite():
     names = [
         "test_bencode",
     ]
-    module_names = ["fastbencode.tests." + name for name in names]
+    module_names = ["tests." + name for name in names]
     result = unittest.TestSuite()
     loader = unittest.TestLoader()
     suite = loader.loadTestsFromNames(module_names)
