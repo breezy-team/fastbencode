@@ -411,14 +411,14 @@ fn bdecode_utf8<'py>(py: Python<'py>, s: &Bound<PyBytes>) -> PyResult<Bound<'py,
 }
 
 #[pyfunction]
-fn bencode(py: Python, x: Bound<PyAny>) -> PyResult<PyObject> {
+fn bencode(py: Python, x: Bound<PyAny>) -> PyResult<Py<PyAny>> {
     let mut encoder = Encoder::new(None, None);
     encoder.process(py, x)?;
     Ok(encoder.to_bytes(py).into())
 }
 
 #[pyfunction]
-fn bencode_utf8(py: Python, x: Bound<PyAny>) -> PyResult<PyObject> {
+fn bencode_utf8(py: Python, x: Bound<PyAny>) -> PyResult<Py<PyAny>> {
     let mut encoder = Encoder::new(None, Some("utf-8".to_string()));
     encoder.process(py, x)?;
     Ok(encoder.to_bytes(py).into())
