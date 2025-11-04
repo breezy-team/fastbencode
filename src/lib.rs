@@ -177,7 +177,12 @@ impl Decoder {
 
         // Return as bytes or decode depending on bytestring_encoding
         if let Some(encoding) = &self.bytestring_encoding {
-            Ok(PyString::from_object(&bytes_obj, encoding, "strict")?.into_any())
+            let encoding_cstr = std::ffi::CString::new(encoding.as_str())
+                .map_err(|_| PyValueError::new_err("invalid encoding string"))?;
+            Ok(
+                PyString::from_encoded_object(&bytes_obj, Some(&encoding_cstr), Some(c"strict"))?
+                    .into_any(),
+            )
         } else {
             Ok(bytes_obj)
         }
@@ -367,7 +372,7 @@ impl Encoder {
         let mut keys: Vec<Bound<PyBytes>> = dict
             .keys()
             .iter()
-            .map(|key| key.extract::<Bound<PyBytes>>())
+            .map(|key| key.extract::<Bound<PyBytes>>().map_err(|e| e.into()))
             .collect::<PyResult<Vec<_>>>()?;
         keys.sort_by(|a, b| {
             let a_str = a.extract::<&[u8]>().unwrap();
