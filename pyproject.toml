@@ -33,7 +33,7 @@ GitHub = "https://github.com/breezy-team/fastbencode"
 [project.optional-dependencies]
 rust = ["setuptools-rust>=1.0.0"]
 dev = [
-    "ruff==0.14.14"
+    "ruff==0.15.0"
 ]
 
 [tool.setuptools]
