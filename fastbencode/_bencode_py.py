@@ -17,7 +17,7 @@
 # Modifications copyright (C) 2021-2023 Jelmer Vernooĳ
 
 
-from typing import Callable, Dict, List, Type
+from collections.abc import Callable
 
 
 class BDecoder:
@@ -118,7 +118,7 @@ class Bencached:
 class BEncoder:
     def __init__(self, bytestring_encoding=None):
         self.bytestring_encoding = bytestring_encoding
-        self.encode_func: Dict[Type, Callable[[object, List[bytes]], None]] = {
+        self.encode_func: dict[type, Callable[[object, list[bytes]], None]] = {
             Bencached: self.encode_bencached,
             int: self.encode_int,
             bytes: self.encode_bytes,

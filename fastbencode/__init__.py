@@ -16,12 +16,10 @@
 
 """Wrapper around the bencode Rust and Python implementations."""
 
-from typing import Type
-
 __version__ = (0, 3, 10)
 
 
-Bencached: Type
+Bencached: type
 
 try:
     from fastbencode._bencode_rs import (
