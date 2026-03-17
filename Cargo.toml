@@ -1,6 +1,6 @@
 [package]
 name = "fastbencode"
-version = "0.3.9"
+version = "0.3.10"
 edition = "2021"
 authors = ["Jelmer Vernooĳ <jelmer@jelmer.uk>"]
 license = "Apache-2.0"
