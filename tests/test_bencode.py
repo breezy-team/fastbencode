@@ -300,10 +300,9 @@ class TestBencodeDecode(TestCase):
                 self.assertEqual(1, len(result))
                 result = result[0]
             self.assertEqual([], result)
-        elif (
-            platform.python_implementation() == "PyPy"
-            or sys.version_info[:2] >= (3, 12)
-        ):
+        elif platform.python_implementation() == "PyPy" or sys.version_info[
+            :2
+        ] >= (3, 12):
             expected = []
             for i in range(99):
                 expected = [expected]
@@ -351,6 +350,39 @@ class TestBencodeDecode(TestCase):
             self._run_check_error(
                 RuntimeError, (b"d0:" * 1000) + b"i1e" + (b"e" * 1000)
             )
+
+    def test_max_depth(self):
+        # A top-level container counts as depth 1.
+        self.assertEqual([], self.module.bdecode(b"le", max_depth=1))
+        self.assertEqual([[]], self.module.bdecode(b"llee", max_depth=2))
+        self.assertEqual({}, self.module.bdecode(b"de", max_depth=1))
+        self.assertEqual(
+            {b"": {}}, self.module.bdecode(b"d0:dee", max_depth=2)
+        )
+        # Mixed nesting: {b"": [[]]} is three levels deep.
+        self.assertEqual(
+            {b"": [[]]}, self.module.bdecode(b"d0:lleee", max_depth=3)
+        )
+
+    def test_max_depth_exceeded(self):
+        self.assertRaises(
+            RecursionError, self.module.bdecode, b"llee", max_depth=1
+        )
+        self.assertRaises(
+            RecursionError, self.module.bdecode, b"d0:dee", max_depth=1
+        )
+        self.assertRaises(
+            RecursionError, self.module.bdecode, b"d0:lleee", max_depth=2
+        )
+
+    def test_max_depth_none_matches_default(self):
+        # max_depth=None must behave exactly like omitting it. The pure-Python
+        # decoder is recursive, so stay well under the interpreter's limit.
+        deep = (b"l" * 100) + (b"e" * 100)
+        self.assertEqual(
+            self.module.bdecode(deep),
+            self.module.bdecode(deep, max_depth=None),
+        )
 
     def test_malformed_dict(self):
         self._run_check_error(ValueError, b"d")
@@ -506,6 +538,29 @@ class TestBencodeEncode(TestCase):
             d = d[b""]
         with RecursionLimit():
             self.assertRaises(RuntimeError, self.module.bencode, top)
+
+    def test_max_depth(self):
+        # A top-level container counts as depth 1.
+        self.assertEqual(b"li1ei2ee", self.module.bencode([1, 2], max_depth=1))
+        self.assertEqual(b"lli1eee", self.module.bencode([[1]], max_depth=2))
+        self.assertEqual(
+            b"d1:ai1ee", self.module.bencode({b"a": 1}, max_depth=1)
+        )
+        self.assertEqual(
+            b"d1:ad1:bi1eee",
+            self.module.bencode({b"a": {b"b": 1}}, max_depth=2),
+        )
+
+    def test_max_depth_exceeded(self):
+        self.assertRaises(
+            RecursionError, self.module.bencode, [[1]], max_depth=1
+        )
+        self.assertRaises(
+            RecursionError, self.module.bencode, {b"a": {b"b": 1}}, max_depth=1
+        )
+        self.assertRaises(
+            RecursionError, self.module.bencode, {b"a": [[1]]}, max_depth=2
+        )
 
     def test_bencached(self):
         self._check(b"i3e", self.module.Bencached(self.module.bencode(3)))

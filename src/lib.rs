@@ -1,5 +1,5 @@
 #![allow(non_snake_case)]
-use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::exceptions::{PyRecursionError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyInt, PyList, PyString, PyTuple};
 
@@ -27,6 +27,7 @@ struct Decoder {
     position: usize,
     yield_tuples: bool,
     bytestring_encoding: Option<String>,
+    max_depth: Option<usize>,
 }
 
 // A container being built up during iterative decoding.
@@ -57,17 +58,20 @@ impl<'py> Frame<'py> {
 #[pymethods]
 impl Decoder {
     #[new]
+    #[pyo3(signature = (s, yield_tuples=None, bytestring_encoding=None, max_depth=None))]
     fn new(
         s: &Bound<PyBytes>,
         yield_tuples: Option<bool>,
         bytestring_encoding: Option<String>,
-    ) -> PyResult<Self> {
-        Ok(Decoder {
+        max_depth: Option<usize>,
+    ) -> Self {
+        Decoder {
             data: s.as_bytes().to_vec(),
             position: 0,
             yield_tuples: yield_tuples.unwrap_or(false),
             bytestring_encoding,
-        })
+            max_depth,
+        }
     }
 
     fn decode<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
@@ -130,11 +134,25 @@ impl Decoder {
                         self.decode_int(py)?
                     }
                     b'l' => {
+                        if let Some(max) = self.max_depth {
+                            if stack.len() >= max {
+                                return Err(PyRecursionError::new_err(
+                                    "maximum bencode nesting depth exceeded",
+                                ));
+                            }
+                        }
                         self.position += 1;
                         stack.push(Frame::List(Vec::new()));
                         continue;
                     }
                     b'd' => {
+                        if let Some(max) = self.max_depth {
+                            if stack.len() >= max {
+                                return Err(PyRecursionError::new_err(
+                                    "maximum bencode nesting depth exceeded",
+                                ));
+                            }
+                        }
                         self.position += 1;
                         stack.push(Frame::Dict {
                             dict: PyDict::new(py),
@@ -302,6 +320,8 @@ impl Decoder {
 struct Encoder {
     buffer: Vec<u8>,
     bytestring_encoding: Option<String>,
+    max_depth: Option<usize>,
+    depth: usize,
 }
 
 // A unit of pending encoding work. Containers push their children as Encode
@@ -314,15 +334,18 @@ enum Task<'py> {
 #[pymethods]
 impl Encoder {
     #[new]
+    #[pyo3(signature = (_maxsize=None, bytestring_encoding=None, max_depth=None))]
     fn new(
-        _py: Python,
         _maxsize: Option<usize>,
         bytestring_encoding: Option<String>,
-    ) -> PyResult<Self> {
-        Ok(Encoder {
+        max_depth: Option<usize>,
+    ) -> Self {
+        Encoder {
             buffer: Vec::new(),
             bytestring_encoding,
-        })
+            max_depth,
+            depth: 0,
+        }
     }
 
     fn to_bytes<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
@@ -338,6 +361,7 @@ impl Encoder {
             let x = match task {
                 Task::CloseContainer => {
                     self.buffer.push(b'e');
+                    self.depth -= 1;
                     continue;
                 }
                 Task::Encode(x) => x,
@@ -411,11 +435,24 @@ impl Encoder {
 }
 
 impl Encoder {
+    fn check_depth(&mut self) -> PyResult<()> {
+        if let Some(max) = self.max_depth {
+            if self.depth >= max {
+                return Err(PyRecursionError::new_err(
+                    "maximum bencode nesting depth exceeded",
+                ));
+            }
+        }
+        self.depth += 1;
+        Ok(())
+    }
+
     fn push_list<'py>(
         &mut self,
         stack: &mut Vec<Task<'py>>,
         sequence: Bound<'py, PyAny>,
     ) -> PyResult<()> {
+        self.check_depth()?;
         self.buffer.push(b'l');
 
         let items: Vec<Bound<PyAny>> = sequence.try_iter()?.collect::<PyResult<Vec<_>>>()?;
@@ -432,6 +469,7 @@ impl Encoder {
         stack: &mut Vec<Task<'py>>,
         dict: Bound<'py, PyDict>,
     ) -> PyResult<()> {
+        self.check_depth()?;
         self.buffer.push(b'd');
 
         // Keys must be byte strings; sort them for canonical ordering.
@@ -464,33 +502,50 @@ impl Encoder {
 }
 
 #[pyfunction]
-fn bdecode<'py>(py: Python<'py>, s: &Bound<PyBytes>) -> PyResult<Bound<'py, PyAny>> {
-    let mut decoder = Decoder::new(s, None, None)?;
+#[pyo3(signature = (s, max_depth=None))]
+fn bdecode<'py>(
+    py: Python<'py>,
+    s: &Bound<PyBytes>,
+    max_depth: Option<usize>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let mut decoder = Decoder::new(s, None, None, max_depth);
     decoder.decode(py)
 }
 
 #[pyfunction]
-fn bdecode_as_tuple<'py>(py: Python<'py>, s: &Bound<PyBytes>) -> PyResult<Bound<'py, PyAny>> {
-    let mut decoder = Decoder::new(s, Some(true), None)?;
+#[pyo3(signature = (s, max_depth=None))]
+fn bdecode_as_tuple<'py>(
+    py: Python<'py>,
+    s: &Bound<PyBytes>,
+    max_depth: Option<usize>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let mut decoder = Decoder::new(s, Some(true), None, max_depth);
     decoder.decode(py)
 }
 
 #[pyfunction]
-fn bdecode_utf8<'py>(py: Python<'py>, s: &Bound<PyBytes>) -> PyResult<Bound<'py, PyAny>> {
-    let mut decoder = Decoder::new(s, None, Some("utf-8".to_string()))?;
+#[pyo3(signature = (s, max_depth=None))]
+fn bdecode_utf8<'py>(
+    py: Python<'py>,
+    s: &Bound<PyBytes>,
+    max_depth: Option<usize>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let mut decoder = Decoder::new(s, None, Some("utf-8".to_string()), max_depth);
     decoder.decode(py)
 }
 
 #[pyfunction]
-fn bencode(py: Python, x: Bound<PyAny>) -> PyResult<Py<PyAny>> {
-    let mut encoder = Encoder::new(py, None, None)?;
+#[pyo3(signature = (x, max_depth=None))]
+fn bencode(py: Python, x: Bound<PyAny>, max_depth: Option<usize>) -> PyResult<Py<PyAny>> {
+    let mut encoder = Encoder::new(None, None, max_depth);
     encoder.process(py, x)?;
     Ok(encoder.to_bytes(py).into())
 }
 
 #[pyfunction]
-fn bencode_utf8(py: Python, x: Bound<PyAny>) -> PyResult<Py<PyAny>> {
-    let mut encoder = Encoder::new(py, None, Some("utf-8".to_string()))?;
+#[pyo3(signature = (x, max_depth=None))]
+fn bencode_utf8(py: Python, x: Bound<PyAny>, max_depth: Option<usize>) -> PyResult<Py<PyAny>> {
+    let mut encoder = Encoder::new(None, Some("utf-8".to_string()), max_depth);
     encoder.process(py, x)?;
     Ok(encoder.to_bytes(py).into())
 }
