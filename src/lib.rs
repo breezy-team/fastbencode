@@ -1,5 +1,5 @@
 #![allow(non_snake_case)]
-use pyo3::exceptions::{PyRecursionError, PyTypeError, PyValueError};
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyInt, PyList, PyString, PyTuple};
 
@@ -27,12 +27,6 @@ struct Decoder {
     position: usize,
     yield_tuples: bool,
     bytestring_encoding: Option<String>,
-}
-
-// Read per instance rather than once, since sys.setrecursionlimit can lower it.
-fn recursion_limit(_py: Python) -> usize {
-    // SAFETY: the GIL is held, as proven by the Python token.
-    unsafe { pyo3::ffi::Py_GetRecursionLimit().max(0) as usize }
 }
 
 // A container being built up during iterative decoding.
@@ -308,23 +302,26 @@ impl Decoder {
 struct Encoder {
     buffer: Vec<u8>,
     bytestring_encoding: Option<String>,
-    depth: usize,
-    max_depth: usize,
+}
+
+// A unit of pending encoding work. Containers push their children as Encode
+// tasks followed by a CloseContainer, so encoding stays iterative.
+enum Task<'py> {
+    Encode(Bound<'py, PyAny>),
+    CloseContainer,
 }
 
 #[pymethods]
 impl Encoder {
     #[new]
     fn new(
-        py: Python,
+        _py: Python,
         _maxsize: Option<usize>,
         bytestring_encoding: Option<String>,
     ) -> PyResult<Self> {
         Ok(Encoder {
             buffer: Vec::new(),
             bytestring_encoding,
-            depth: 0,
-            max_depth: recursion_limit(py),
         })
     }
 
@@ -332,32 +329,39 @@ impl Encoder {
         PyBytes::new(py, &self.buffer)
     }
 
-    fn process(&mut self, py: Python, x: Bound<PyAny>) -> PyResult<()> {
-        if self.depth > self.max_depth {
-            return Err(PyRecursionError::new_err(
-                "maximum recursion depth exceeded while encoding bencode",
-            ));
-        }
-        if let Ok(s) = x.extract::<Bound<PyBytes>>() {
-            self.encode_bytes(s)?;
-        } else if let Ok(n) = x.extract::<i64>() {
-            self.encode_int(n)?;
-        } else if let Ok(n) = x.extract::<Bound<PyInt>>() {
-            self.encode_long(n)?;
-        } else if x.is_instance_of::<PyList>() {
-            self.encode_list(py, x)?;
-        } else if x.is_instance_of::<PyTuple>() {
-            self.encode_list(py, x)?;
-        } else if let Ok(d) = x.extract::<Bound<PyDict>>() {
-            self.encode_dict(py, d)?;
-        } else if let Ok(b) = x.extract::<bool>() {
-            self.encode_int(if b { 1 } else { 0 })?;
-        } else if let Ok(obj) = x.extract::<PyRef<Bencached>>() {
-            self.append_bytes(obj.as_bytes(py)?)?;
-        } else if let Ok(s) = x.extract::<&str>() {
-            self.encode_string(s)?;
-        } else {
-            return Err(PyTypeError::new_err(format!("unsupported type: {:?}", x)));
+    // Encode a value using an explicit work-stack rather than recursion, so
+    // that deeply nested input does not overflow the native stack.
+    fn process<'py>(&mut self, py: Python<'py>, x: Bound<'py, PyAny>) -> PyResult<()> {
+        let mut stack: Vec<Task<'py>> = vec![Task::Encode(x)];
+
+        while let Some(task) = stack.pop() {
+            let x = match task {
+                Task::CloseContainer => {
+                    self.buffer.push(b'e');
+                    continue;
+                }
+                Task::Encode(x) => x,
+            };
+
+            if let Ok(s) = x.extract::<Bound<PyBytes>>() {
+                self.encode_bytes(s)?;
+            } else if let Ok(n) = x.extract::<i64>() {
+                self.encode_int(n)?;
+            } else if let Ok(n) = x.extract::<Bound<PyInt>>() {
+                self.encode_long(n)?;
+            } else if x.is_instance_of::<PyList>() || x.is_instance_of::<PyTuple>() {
+                self.push_list(&mut stack, x)?;
+            } else if let Ok(d) = x.extract::<Bound<PyDict>>() {
+                self.push_dict(&mut stack, d)?;
+            } else if let Ok(b) = x.extract::<bool>() {
+                self.encode_int(if b { 1 } else { 0 })?;
+            } else if let Ok(obj) = x.extract::<PyRef<Bencached>>() {
+                self.append_bytes(obj.as_bytes(py)?)?;
+            } else if let Ok(s) = x.extract::<&str>() {
+                self.encode_string(s)?;
+            } else {
+                return Err(PyTypeError::new_err(format!("unsupported type: {:?}", x)));
+            }
         }
         Ok(())
     }
@@ -404,29 +408,40 @@ impl Encoder {
             ))
         }
     }
+}
 
-    fn encode_list(&mut self, py: Python, sequence: Bound<PyAny>) -> PyResult<()> {
-        self.depth += 1;
+impl Encoder {
+    fn push_list<'py>(
+        &mut self,
+        stack: &mut Vec<Task<'py>>,
+        sequence: Bound<'py, PyAny>,
+    ) -> PyResult<()> {
         self.buffer.push(b'l');
 
-        for item in sequence.try_iter()? {
-            self.process(py, item?.into())?;
-        }
+        let items: Vec<Bound<PyAny>> = sequence.try_iter()?.collect::<PyResult<Vec<_>>>()?;
 
-        self.buffer.push(b'e');
-        self.depth -= 1;
+        stack.push(Task::CloseContainer);
+        for item in items.into_iter().rev() {
+            stack.push(Task::Encode(item));
+        }
         Ok(())
     }
 
-    fn encode_dict(&mut self, py: Python, dict: Bound<PyDict>) -> PyResult<()> {
-        self.depth += 1;
+    fn push_dict<'py>(
+        &mut self,
+        stack: &mut Vec<Task<'py>>,
+        dict: Bound<'py, PyDict>,
+    ) -> PyResult<()> {
         self.buffer.push(b'd');
 
-        // Get all keys and sort them
+        // Keys must be byte strings; sort them for canonical ordering.
         let mut keys: Vec<Bound<PyBytes>> = dict
             .keys()
             .iter()
-            .map(|key| key.extract::<Bound<PyBytes>>().map_err(|e| e.into()))
+            .map(|key| {
+                key.extract::<Bound<PyBytes>>()
+                    .map_err(|_| PyTypeError::new_err("key in dict should be string"))
+            })
             .collect::<PyResult<Vec<_>>>()?;
         keys.sort_by(|a, b| {
             let a_str = a.extract::<&[u8]>().unwrap();
@@ -434,20 +449,16 @@ impl Encoder {
             a_str.cmp(b_str)
         });
 
-        for key in keys {
-            if let Ok(bytes) = key.extract::<Bound<PyBytes>>() {
-                self.encode_bytes(bytes)?;
-            } else {
-                return Err(PyTypeError::new_err("key in dict should be string"));
-            }
-
-            if let Some(value) = dict.get_item(key)? {
-                self.process(py, value.into())?;
-            }
+        // Stack key/value pairs in reverse so they pop in key order, each key
+        // (a byte string) encoded immediately before its value.
+        stack.push(Task::CloseContainer);
+        for key in keys.into_iter().rev() {
+            let value = dict
+                .get_item(&key)?
+                .ok_or_else(|| PyTypeError::new_err("dict key vanished during encoding"))?;
+            stack.push(Task::Encode(value));
+            stack.push(Task::Encode(key.into_any()));
         }
-
-        self.buffer.push(b'e');
-        self.depth -= 1;
         Ok(())
     }
 }

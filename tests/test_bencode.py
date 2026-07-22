@@ -458,6 +458,19 @@ class TestBencodeEncode(TestCase):
         self._check(b"ll5:Alice3:Bobeli2ei3eee", ((b"Alice", b"Bob"), (2, 3)))
 
     def test_list_deep_nested(self):
+        if self.id().endswith("(C)"):
+            # The Rust encoder is iterative, so nesting far deeper than the
+            # native stack would allow still encodes without crashing.
+            depth = 100000
+            top = []
+            lst = top
+            for _ in range(depth - 1):
+                lst.append([])
+                lst = lst[0]
+            expected = (b"l" * depth) + (b"e" * depth)
+            self.assertEqual(expected, self.module.bencode(top))
+            return
+
         top = []
         lst = top
         for unused_i in range(1000):
@@ -475,6 +488,18 @@ class TestBencodeEncode(TestCase):
         )
 
     def test_dict_deep_nested(self):
+        if self.id().endswith("(C)"):
+            # The Rust encoder is iterative, so a dict nested far deeper than
+            # the native stack would allow still encodes without crashing.
+            depth = 100000
+            d = top = {}
+            for _ in range(depth):
+                d[b""] = {}
+                d = d[b""]
+            expected = (b"d0:" * depth) + b"de" + (b"e" * depth)
+            self.assertEqual(expected, self.module.bencode(top))
+            return
+
         d = top = {}
         for i in range(1000):
             d[b""] = {}
