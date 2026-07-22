@@ -300,6 +300,10 @@ class TestBencodeDecode(TestCase):
             for i in range(99):
                 expected = [expected]
             self._check(expected, (b"l" * 100) + (b"e" * 100))
+            with RecursionLimit():
+                self._run_check_error(
+                    RuntimeError, (b"l" * 1000) + (b"e" * 1000)
+                )
         else:
             with RecursionLimit():
                 self._run_check_error(
@@ -323,9 +327,6 @@ class TestBencodeDecode(TestCase):
         )
 
     def test_dict_deepnested(self):
-        if self.id().endswith("(C)"):
-            self.skipTest("no limit recursion in Rust code")
-
         with RecursionLimit():
             self._run_check_error(
                 RuntimeError, (b"d0:" * 1000) + b"i1e" + (b"e" * 1000)
@@ -437,9 +438,6 @@ class TestBencodeEncode(TestCase):
         self._check(b"ll5:Alice3:Bobeli2ei3eee", ((b"Alice", b"Bob"), (2, 3)))
 
     def test_list_deep_nested(self):
-        if self.id().endswith("(C)"):
-            self.skipTest("no limit recursion in Rust code")
-
         top = []
         lst = top
         for unused_i in range(1000):
@@ -457,9 +455,6 @@ class TestBencodeEncode(TestCase):
         )
 
     def test_dict_deep_nested(self):
-        if self.id().endswith("(C)"):
-            self.skipTest("no limit of recursion in Rust code")
-
         d = top = {}
         for i in range(1000):
             d[b""] = {}
