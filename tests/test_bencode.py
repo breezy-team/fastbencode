@@ -291,10 +291,18 @@ class TestBencodeDecode(TestCase):
     def test_list_deepnested(self):
         import platform
 
-        if (
+        if self.id().endswith("(C)"):
+            # The Rust decoder is iterative, so nesting far deeper than the
+            # native stack would allow still decodes without crashing.
+            depth = 100000
+            result = self.module.bdecode((b"l" * depth) + (b"e" * depth))
+            for _ in range(depth - 1):
+                self.assertEqual(1, len(result))
+                result = result[0]
+            self.assertEqual([], result)
+        elif (
             platform.python_implementation() == "PyPy"
             or sys.version_info[:2] >= (3, 12)
-            or self.id().endswith("(C)")
         ):
             expected = []
             for i in range(99):
@@ -327,6 +335,18 @@ class TestBencodeDecode(TestCase):
         )
 
     def test_dict_deepnested(self):
+        if self.id().endswith("(C)"):
+            # The Rust decoder is iterative, so a dict nested far deeper than
+            # the native stack would allow still decodes without crashing.
+            depth = 100000
+            result = self.module.bdecode(
+                (b"d0:" * depth) + b"i1e" + (b"e" * depth)
+            )
+            for _ in range(depth):
+                result = result[b""]
+            self.assertEqual(1, result)
+            return
+
         with RecursionLimit():
             self._run_check_error(
                 RuntimeError, (b"d0:" * 1000) + b"i1e" + (b"e" * 1000)

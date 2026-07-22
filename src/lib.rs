@@ -27,14 +27,37 @@ struct Decoder {
     position: usize,
     yield_tuples: bool,
     bytestring_encoding: Option<String>,
-    depth: usize,
-    max_depth: usize,
 }
 
 // Read per instance rather than once, since sys.setrecursionlimit can lower it.
 fn recursion_limit(_py: Python) -> usize {
     // SAFETY: the GIL is held, as proven by the Python token.
     unsafe { pyo3::ffi::Py_GetRecursionLimit().max(0) as usize }
+}
+
+// A container being built up during iterative decoding.
+enum Frame<'py> {
+    List(Vec<Bound<'py, PyAny>>),
+    Dict {
+        dict: Bound<'py, PyDict>,
+        pending_key: Option<Bound<'py, PyAny>>,
+        last_key: Option<Vec<u8>>,
+    },
+}
+
+impl<'py> Frame<'py> {
+    fn into_value(self, py: Python<'py>, yield_tuples: bool) -> PyResult<Bound<'py, PyAny>> {
+        match self {
+            Frame::List(items) => {
+                if yield_tuples {
+                    Ok(PyTuple::new(py, &items)?.into_any())
+                } else {
+                    Ok(PyList::new(py, &items)?.into_any())
+                }
+            }
+            Frame::Dict { dict, .. } => Ok(dict.into_any()),
+        }
+    }
 }
 
 #[pymethods]
@@ -50,8 +73,6 @@ impl Decoder {
             position: 0,
             yield_tuples: yield_tuples.unwrap_or(false),
             bytestring_encoding,
-            depth: 0,
-            max_depth: recursion_limit(s.py()),
         })
     }
 
@@ -63,38 +84,117 @@ impl Decoder {
         Ok(result)
     }
 
+    // Decode a single bencode value using an explicit work-stack rather than
+    // recursion, so that deeply nested input raises ValueError instead of
+    // overflowing the native stack.
     fn decode_object<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        if self.position >= self.data.len() {
-            return Err(PyValueError::new_err("stream underflow"));
-        }
+        let mut stack: Vec<Frame<'py>> = Vec::new();
 
-        if self.depth > self.max_depth {
-            return Err(PyRecursionError::new_err(
-                "maximum recursion depth exceeded while decoding bencode",
-            ));
-        }
+        loop {
+            if self.position >= self.data.len() {
+                return Err(PyValueError::new_err("stream underflow"));
+            }
 
-        let next_byte = self.data[self.position];
+            let next_byte = self.data[self.position];
 
-        match next_byte {
-            b'0'..=b'9' => Ok(self.decode_bytes(py)?.into_any()),
-            b'l' => {
-                self.position += 1;
-                Ok(self.decode_list(py)?.into_any())
+            // When the innermost container is a dict awaiting a key, that key
+            // must be a simple byte string. A dict awaiting a value must not
+            // be terminated before the value is supplied.
+            if let Some(Frame::Dict { pending_key, .. }) = stack.last() {
+                if pending_key.is_none() {
+                    if next_byte != b'e' && !next_byte.is_ascii_digit() {
+                        return Err(PyValueError::new_err("key was not a simple string"));
+                    }
+                } else if next_byte == b'e' {
+                    return Err(PyValueError::new_err(format!(
+                        "unknown object type identifier {:?}",
+                        next_byte as char
+                    )));
+                }
             }
-            b'i' => {
-                self.position += 1;
-                Ok(self.decode_int(py)?.into_any())
+
+            // A closing 'e' finishes the innermost container; anything else
+            // produces a value that we then attach to the enclosing container.
+            let value = if next_byte == b'e' {
+                match stack.pop() {
+                    Some(frame) => {
+                        self.position += 1;
+                        frame.into_value(py, self.yield_tuples)?
+                    }
+                    None => {
+                        return Err(PyValueError::new_err(format!(
+                            "unknown object type identifier {:?}",
+                            next_byte as char
+                        )));
+                    }
+                }
+            } else {
+                match next_byte {
+                    b'0'..=b'9' => self.decode_bytes(py)?,
+                    b'i' => {
+                        self.position += 1;
+                        self.decode_int(py)?
+                    }
+                    b'l' => {
+                        self.position += 1;
+                        stack.push(Frame::List(Vec::new()));
+                        continue;
+                    }
+                    b'd' => {
+                        self.position += 1;
+                        stack.push(Frame::Dict {
+                            dict: PyDict::new(py),
+                            pending_key: None,
+                            last_key: None,
+                        });
+                        continue;
+                    }
+                    _ => {
+                        return Err(PyValueError::new_err(format!(
+                            "unknown object type identifier {:?}",
+                            next_byte as char
+                        )));
+                    }
+                }
+            };
+
+            match stack.last_mut() {
+                None => return Ok(value),
+                Some(Frame::List(items)) => items.push(value),
+                Some(Frame::Dict {
+                    pending_key,
+                    last_key,
+                    ..
+                }) => {
+                    if pending_key.is_none() {
+                        // This value is a key; it must be a byte string.
+                        let key_bytes = self.key_bytes(&value)?;
+                        if let Some(last) = last_key {
+                            if *last >= key_bytes {
+                                return Err(PyValueError::new_err("dict keys disordered"));
+                            }
+                        }
+                        *last_key = Some(key_bytes);
+                        *pending_key = Some(value);
+                    } else {
+                        let key = pending_key.take().unwrap();
+                        if let Some(Frame::Dict { dict, .. }) = stack.last() {
+                            dict.set_item(key, value)?;
+                        }
+                    }
+                }
             }
-            b'd' => {
-                self.position += 1;
-                Ok(self.decode_dict(py)?.into_any())
-            }
-            _ => Err(PyValueError::new_err(format!(
-                "unknown object type identifier {:?}",
-                next_byte as char
-            ))),
         }
+    }
+
+    // Extract the raw key bytes from a decoded key object for ordering checks.
+    fn key_bytes(&self, key_obj: &Bound<'_, PyAny>) -> PyResult<Vec<u8>> {
+        if let Some(encoding) = &self.bytestring_encoding {
+            if encoding == "utf-8" {
+                return Ok(key_obj.extract::<&str>()?.as_bytes().to_vec());
+            }
+        }
+        Ok(key_obj.extract::<Bound<PyBytes>>()?.as_bytes().to_vec())
     }
 
     fn read_digits(&mut self, stop_char: u8) -> PyResult<String> {
@@ -201,87 +301,6 @@ impl Decoder {
         } else {
             Ok(bytes_obj)
         }
-    }
-
-    fn decode_list<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        self.depth += 1;
-        let mut result = Vec::new();
-
-        while self.position < self.data.len() && self.data[self.position] != b'e' {
-            let item = self.decode_object(py)?;
-            result.push(item);
-        }
-
-        if self.position >= self.data.len() {
-            return Err(PyValueError::new_err("malformed list"));
-        }
-
-        // Skip the 'e'
-        self.position += 1;
-        self.depth -= 1;
-
-        if self.yield_tuples {
-            let tuple = PyTuple::new(py, &result)?;
-            Ok(tuple.into_any())
-        } else {
-            let list = PyList::new(py, &result)?;
-            Ok(list.into_any())
-        }
-    }
-
-    fn decode_dict<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        self.depth += 1;
-        let dict = PyDict::new(py);
-        let mut last_key: Option<Vec<u8>> = None;
-
-        while self.position < self.data.len() && self.data[self.position] != b'e' {
-            // Keys should be strings only
-            if self.data[self.position] < b'0' || self.data[self.position] > b'9' {
-                return Err(PyValueError::new_err("key was not a simple string"));
-            }
-
-            // Decode key as bytes
-            let key_obj = self.decode_bytes(py)?;
-
-            // Get bytes representation for comparison
-            let key_bytes = if let Some(encoding) = &self.bytestring_encoding {
-                if encoding == "utf-8" {
-                    let key_str = key_obj.extract::<&str>()?;
-                    key_str.as_bytes().to_vec()
-                } else {
-                    let key_bytes = key_obj.extract::<Bound<PyBytes>>()?;
-                    key_bytes.as_bytes().to_vec()
-                }
-            } else {
-                let key_bytes = key_obj.extract::<Bound<PyBytes>>()?;
-                key_bytes.as_bytes().to_vec()
-            };
-
-            // Check key ordering
-            if let Some(ref last) = last_key {
-                if last >= &key_bytes {
-                    return Err(PyValueError::new_err("dict keys disordered"));
-                }
-            }
-
-            last_key = Some(key_bytes);
-
-            // Decode value
-            let value = self.decode_object(py)?;
-
-            // Insert into dictionary
-            dict.set_item(key_obj, value)?;
-        }
-
-        if self.position >= self.data.len() {
-            return Err(PyValueError::new_err("malformed dict"));
-        }
-
-        // Skip the 'e'
-        self.position += 1;
-        self.depth -= 1;
-
-        Ok(dict)
     }
 }
 
