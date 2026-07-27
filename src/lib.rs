@@ -1,5 +1,5 @@
 #![allow(non_snake_case)]
-use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::exceptions::{PyRecursionError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyInt, PyList, PyString, PyTuple};
 
@@ -27,6 +27,14 @@ struct Decoder {
     position: usize,
     yield_tuples: bool,
     bytestring_encoding: Option<String>,
+    depth: usize,
+    max_depth: usize,
+}
+
+// Read per instance rather than once, since sys.setrecursionlimit can lower it.
+fn recursion_limit(_py: Python) -> usize {
+    // SAFETY: the GIL is held, as proven by the Python token.
+    unsafe { pyo3::ffi::Py_GetRecursionLimit().max(0) as usize }
 }
 
 #[pymethods]
@@ -36,13 +44,15 @@ impl Decoder {
         s: &Bound<PyBytes>,
         yield_tuples: Option<bool>,
         bytestring_encoding: Option<String>,
-    ) -> Self {
-        Decoder {
+    ) -> PyResult<Self> {
+        Ok(Decoder {
             data: s.as_bytes().to_vec(),
             position: 0,
             yield_tuples: yield_tuples.unwrap_or(false),
             bytestring_encoding,
-        }
+            depth: 0,
+            max_depth: recursion_limit(s.py()),
+        })
     }
 
     fn decode<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
@@ -58,7 +68,12 @@ impl Decoder {
             return Err(PyValueError::new_err("stream underflow"));
         }
 
-        // Check for recursion - in a real implementation we would track recursion depth
+        if self.depth > self.max_depth {
+            return Err(PyRecursionError::new_err(
+                "maximum recursion depth exceeded while decoding bencode",
+            ));
+        }
+
         let next_byte = self.data[self.position];
 
         match next_byte {
@@ -189,6 +204,7 @@ impl Decoder {
     }
 
     fn decode_list<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        self.depth += 1;
         let mut result = Vec::new();
 
         while self.position < self.data.len() && self.data[self.position] != b'e' {
@@ -202,6 +218,7 @@ impl Decoder {
 
         // Skip the 'e'
         self.position += 1;
+        self.depth -= 1;
 
         if self.yield_tuples {
             let tuple = PyTuple::new(py, &result)?;
@@ -213,6 +230,7 @@ impl Decoder {
     }
 
     fn decode_dict<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        self.depth += 1;
         let dict = PyDict::new(py);
         let mut last_key: Option<Vec<u8>> = None;
 
@@ -261,6 +279,7 @@ impl Decoder {
 
         // Skip the 'e'
         self.position += 1;
+        self.depth -= 1;
 
         Ok(dict)
     }
@@ -270,16 +289,24 @@ impl Decoder {
 struct Encoder {
     buffer: Vec<u8>,
     bytestring_encoding: Option<String>,
+    depth: usize,
+    max_depth: usize,
 }
 
 #[pymethods]
 impl Encoder {
     #[new]
-    fn new(_maxsize: Option<usize>, bytestring_encoding: Option<String>) -> Self {
-        Encoder {
+    fn new(
+        py: Python,
+        _maxsize: Option<usize>,
+        bytestring_encoding: Option<String>,
+    ) -> PyResult<Self> {
+        Ok(Encoder {
             buffer: Vec::new(),
             bytestring_encoding,
-        }
+            depth: 0,
+            max_depth: recursion_limit(py),
+        })
     }
 
     fn to_bytes<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
@@ -287,6 +314,11 @@ impl Encoder {
     }
 
     fn process(&mut self, py: Python, x: Bound<PyAny>) -> PyResult<()> {
+        if self.depth > self.max_depth {
+            return Err(PyRecursionError::new_err(
+                "maximum recursion depth exceeded while encoding bencode",
+            ));
+        }
         if let Ok(s) = x.extract::<Bound<PyBytes>>() {
             self.encode_bytes(s)?;
         } else if let Ok(n) = x.extract::<i64>() {
@@ -355,6 +387,7 @@ impl Encoder {
     }
 
     fn encode_list(&mut self, py: Python, sequence: Bound<PyAny>) -> PyResult<()> {
+        self.depth += 1;
         self.buffer.push(b'l');
 
         for item in sequence.try_iter()? {
@@ -362,10 +395,12 @@ impl Encoder {
         }
 
         self.buffer.push(b'e');
+        self.depth -= 1;
         Ok(())
     }
 
     fn encode_dict(&mut self, py: Python, dict: Bound<PyDict>) -> PyResult<()> {
+        self.depth += 1;
         self.buffer.push(b'd');
 
         // Get all keys and sort them
@@ -393,38 +428,39 @@ impl Encoder {
         }
 
         self.buffer.push(b'e');
+        self.depth -= 1;
         Ok(())
     }
 }
 
 #[pyfunction]
 fn bdecode<'py>(py: Python<'py>, s: &Bound<PyBytes>) -> PyResult<Bound<'py, PyAny>> {
-    let mut decoder = Decoder::new(s, None, None);
+    let mut decoder = Decoder::new(s, None, None)?;
     decoder.decode(py)
 }
 
 #[pyfunction]
 fn bdecode_as_tuple<'py>(py: Python<'py>, s: &Bound<PyBytes>) -> PyResult<Bound<'py, PyAny>> {
-    let mut decoder = Decoder::new(s, Some(true), None);
+    let mut decoder = Decoder::new(s, Some(true), None)?;
     decoder.decode(py)
 }
 
 #[pyfunction]
 fn bdecode_utf8<'py>(py: Python<'py>, s: &Bound<PyBytes>) -> PyResult<Bound<'py, PyAny>> {
-    let mut decoder = Decoder::new(s, None, Some("utf-8".to_string()));
+    let mut decoder = Decoder::new(s, None, Some("utf-8".to_string()))?;
     decoder.decode(py)
 }
 
 #[pyfunction]
 fn bencode(py: Python, x: Bound<PyAny>) -> PyResult<Py<PyAny>> {
-    let mut encoder = Encoder::new(None, None);
+    let mut encoder = Encoder::new(py, None, None)?;
     encoder.process(py, x)?;
     Ok(encoder.to_bytes(py).into())
 }
 
 #[pyfunction]
 fn bencode_utf8(py: Python, x: Bound<PyAny>) -> PyResult<Py<PyAny>> {
-    let mut encoder = Encoder::new(None, Some("utf-8".to_string()));
+    let mut encoder = Encoder::new(py, None, Some("utf-8".to_string()))?;
     encoder.process(py, x)?;
     Ok(encoder.to_bytes(py).into())
 }
