@@ -31,13 +31,10 @@ struct Decoder {
     max_depth: usize,
 }
 
-// Read the interpreter's recursion limit so both backends fail on the same
-// deeply nested input (the pure-Python backend raises RecursionError).
-fn recursion_limit(py: Python) -> PyResult<usize> {
-    py.import("sys")?
-        .getattr("getrecursionlimit")?
-        .call0()?
-        .extract()
+// Read per instance rather than once, since sys.setrecursionlimit can lower it.
+fn recursion_limit(_py: Python) -> usize {
+    // SAFETY: the GIL is held, as proven by the Python token.
+    unsafe { pyo3::ffi::Py_GetRecursionLimit().max(0) as usize }
 }
 
 #[pymethods]
@@ -54,7 +51,7 @@ impl Decoder {
             yield_tuples: yield_tuples.unwrap_or(false),
             bytestring_encoding,
             depth: 0,
-            max_depth: recursion_limit(s.py())?,
+            max_depth: recursion_limit(s.py()),
         })
     }
 
@@ -308,7 +305,7 @@ impl Encoder {
             buffer: Vec::new(),
             bytestring_encoding,
             depth: 0,
-            max_depth: recursion_limit(py)?,
+            max_depth: recursion_limit(py),
         })
     }
 
