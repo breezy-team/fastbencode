@@ -22,6 +22,11 @@ serialize/deserialize all plain strings as UTF-8 bytestrings.
 Note that for performance reasons, all dictionary keys still have to be
 bytestrings.
 
+All functions accept an optional ``max_depth`` argument that caps how deeply
+containers may nest, raising ``RecursionError`` when exceeded. It defaults to
+``None`` (no limit), and a top-level container counts as depth 1. This guards
+against untrusted, deeply nested input.
+
 License
 =======
 fastbencode is available under the Apache License, version 2.

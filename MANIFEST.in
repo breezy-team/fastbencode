@@ -3,4 +3,5 @@ include COPYING
 include fastbencode/py.typed
 include Cargo.toml
 recursive-include tests *.py
+recursive-include benchmarks *.py
 recursive-include src *.rs

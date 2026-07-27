@@ -27,32 +27,51 @@ struct Decoder {
     position: usize,
     yield_tuples: bool,
     bytestring_encoding: Option<String>,
-    depth: usize,
-    max_depth: usize,
+    max_depth: Option<usize>,
 }
 
-// Read per instance rather than once, since sys.setrecursionlimit can lower it.
-fn recursion_limit(_py: Python) -> usize {
-    // SAFETY: the GIL is held, as proven by the Python token.
-    unsafe { pyo3::ffi::Py_GetRecursionLimit().max(0) as usize }
+// A container being built up during iterative decoding.
+enum Frame<'py> {
+    List(Vec<Bound<'py, PyAny>>),
+    Dict {
+        dict: Bound<'py, PyDict>,
+        pending_key: Option<Bound<'py, PyAny>>,
+        last_key: Option<Vec<u8>>,
+    },
+}
+
+impl<'py> Frame<'py> {
+    fn into_value(self, py: Python<'py>, yield_tuples: bool) -> PyResult<Bound<'py, PyAny>> {
+        match self {
+            Frame::List(items) => {
+                if yield_tuples {
+                    Ok(PyTuple::new(py, &items)?.into_any())
+                } else {
+                    Ok(PyList::new(py, &items)?.into_any())
+                }
+            }
+            Frame::Dict { dict, .. } => Ok(dict.into_any()),
+        }
+    }
 }
 
 #[pymethods]
 impl Decoder {
     #[new]
+    #[pyo3(signature = (s, yield_tuples=None, bytestring_encoding=None, max_depth=None))]
     fn new(
         s: &Bound<PyBytes>,
         yield_tuples: Option<bool>,
         bytestring_encoding: Option<String>,
-    ) -> PyResult<Self> {
-        Ok(Decoder {
+        max_depth: Option<usize>,
+    ) -> Self {
+        Decoder {
             data: s.as_bytes().to_vec(),
             position: 0,
             yield_tuples: yield_tuples.unwrap_or(false),
             bytestring_encoding,
-            depth: 0,
-            max_depth: recursion_limit(s.py()),
-        })
+            max_depth,
+        }
     }
 
     fn decode<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
@@ -63,38 +82,131 @@ impl Decoder {
         Ok(result)
     }
 
+    // Decode a single bencode value using an explicit work-stack rather than
+    // recursion, so that deeply nested input raises ValueError instead of
+    // overflowing the native stack.
     fn decode_object<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        if self.position >= self.data.len() {
-            return Err(PyValueError::new_err("stream underflow"));
-        }
+        let mut stack: Vec<Frame<'py>> = Vec::new();
 
-        if self.depth > self.max_depth {
-            return Err(PyRecursionError::new_err(
-                "maximum recursion depth exceeded while decoding bencode",
-            ));
-        }
+        loop {
+            if self.position >= self.data.len() {
+                return Err(PyValueError::new_err("stream underflow"));
+            }
 
-        let next_byte = self.data[self.position];
+            let next_byte = self.data[self.position];
 
-        match next_byte {
-            b'0'..=b'9' => Ok(self.decode_bytes(py)?.into_any()),
-            b'l' => {
-                self.position += 1;
-                Ok(self.decode_list(py)?.into_any())
+            // When the innermost container is a dict awaiting a key, that key
+            // must be a simple byte string. A dict awaiting a value must not
+            // be terminated before the value is supplied.
+            if let Some(Frame::Dict { pending_key, .. }) = stack.last() {
+                if pending_key.is_none() {
+                    if next_byte != b'e' && !next_byte.is_ascii_digit() {
+                        return Err(PyValueError::new_err("key was not a simple string"));
+                    }
+                } else if next_byte == b'e' {
+                    return Err(PyValueError::new_err(format!(
+                        "unknown object type identifier {:?}",
+                        next_byte as char
+                    )));
+                }
             }
-            b'i' => {
-                self.position += 1;
-                Ok(self.decode_int(py)?.into_any())
+
+            // A closing 'e' finishes the innermost container; anything else
+            // produces a value that we then attach to the enclosing container.
+            let value = if next_byte == b'e' {
+                match stack.pop() {
+                    Some(frame) => {
+                        self.position += 1;
+                        frame.into_value(py, self.yield_tuples)?
+                    }
+                    None => {
+                        return Err(PyValueError::new_err(format!(
+                            "unknown object type identifier {:?}",
+                            next_byte as char
+                        )));
+                    }
+                }
+            } else {
+                match next_byte {
+                    b'0'..=b'9' => self.decode_bytes(py)?,
+                    b'i' => {
+                        self.position += 1;
+                        self.decode_int(py)?
+                    }
+                    b'l' => {
+                        if let Some(max) = self.max_depth {
+                            if stack.len() >= max {
+                                return Err(PyRecursionError::new_err(
+                                    "maximum bencode nesting depth exceeded",
+                                ));
+                            }
+                        }
+                        self.position += 1;
+                        stack.push(Frame::List(Vec::new()));
+                        continue;
+                    }
+                    b'd' => {
+                        if let Some(max) = self.max_depth {
+                            if stack.len() >= max {
+                                return Err(PyRecursionError::new_err(
+                                    "maximum bencode nesting depth exceeded",
+                                ));
+                            }
+                        }
+                        self.position += 1;
+                        stack.push(Frame::Dict {
+                            dict: PyDict::new(py),
+                            pending_key: None,
+                            last_key: None,
+                        });
+                        continue;
+                    }
+                    _ => {
+                        return Err(PyValueError::new_err(format!(
+                            "unknown object type identifier {:?}",
+                            next_byte as char
+                        )));
+                    }
+                }
+            };
+
+            match stack.last_mut() {
+                None => return Ok(value),
+                Some(Frame::List(items)) => items.push(value),
+                Some(Frame::Dict {
+                    pending_key,
+                    last_key,
+                    ..
+                }) => {
+                    if pending_key.is_none() {
+                        // This value is a key; it must be a byte string.
+                        let key_bytes = self.key_bytes(&value)?;
+                        if let Some(last) = last_key {
+                            if *last >= key_bytes {
+                                return Err(PyValueError::new_err("dict keys disordered"));
+                            }
+                        }
+                        *last_key = Some(key_bytes);
+                        *pending_key = Some(value);
+                    } else {
+                        let key = pending_key.take().unwrap();
+                        if let Some(Frame::Dict { dict, .. }) = stack.last() {
+                            dict.set_item(key, value)?;
+                        }
+                    }
+                }
             }
-            b'd' => {
-                self.position += 1;
-                Ok(self.decode_dict(py)?.into_any())
-            }
-            _ => Err(PyValueError::new_err(format!(
-                "unknown object type identifier {:?}",
-                next_byte as char
-            ))),
         }
+    }
+
+    // Extract the raw key bytes from a decoded key object for ordering checks.
+    fn key_bytes(&self, key_obj: &Bound<'_, PyAny>) -> PyResult<Vec<u8>> {
+        if let Some(encoding) = &self.bytestring_encoding {
+            if encoding == "utf-8" {
+                return Ok(key_obj.extract::<&str>()?.as_bytes().to_vec());
+            }
+        }
+        Ok(key_obj.extract::<Bound<PyBytes>>()?.as_bytes().to_vec())
     }
 
     fn read_digits(&mut self, stop_char: u8) -> PyResult<String> {
@@ -202,143 +314,78 @@ impl Decoder {
             Ok(bytes_obj)
         }
     }
-
-    fn decode_list<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        self.depth += 1;
-        let mut result = Vec::new();
-
-        while self.position < self.data.len() && self.data[self.position] != b'e' {
-            let item = self.decode_object(py)?;
-            result.push(item);
-        }
-
-        if self.position >= self.data.len() {
-            return Err(PyValueError::new_err("malformed list"));
-        }
-
-        // Skip the 'e'
-        self.position += 1;
-        self.depth -= 1;
-
-        if self.yield_tuples {
-            let tuple = PyTuple::new(py, &result)?;
-            Ok(tuple.into_any())
-        } else {
-            let list = PyList::new(py, &result)?;
-            Ok(list.into_any())
-        }
-    }
-
-    fn decode_dict<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        self.depth += 1;
-        let dict = PyDict::new(py);
-        let mut last_key: Option<Vec<u8>> = None;
-
-        while self.position < self.data.len() && self.data[self.position] != b'e' {
-            // Keys should be strings only
-            if self.data[self.position] < b'0' || self.data[self.position] > b'9' {
-                return Err(PyValueError::new_err("key was not a simple string"));
-            }
-
-            // Decode key as bytes
-            let key_obj = self.decode_bytes(py)?;
-
-            // Get bytes representation for comparison
-            let key_bytes = if let Some(encoding) = &self.bytestring_encoding {
-                if encoding == "utf-8" {
-                    let key_str = key_obj.extract::<&str>()?;
-                    key_str.as_bytes().to_vec()
-                } else {
-                    let key_bytes = key_obj.extract::<Bound<PyBytes>>()?;
-                    key_bytes.as_bytes().to_vec()
-                }
-            } else {
-                let key_bytes = key_obj.extract::<Bound<PyBytes>>()?;
-                key_bytes.as_bytes().to_vec()
-            };
-
-            // Check key ordering
-            if let Some(ref last) = last_key {
-                if last >= &key_bytes {
-                    return Err(PyValueError::new_err("dict keys disordered"));
-                }
-            }
-
-            last_key = Some(key_bytes);
-
-            // Decode value
-            let value = self.decode_object(py)?;
-
-            // Insert into dictionary
-            dict.set_item(key_obj, value)?;
-        }
-
-        if self.position >= self.data.len() {
-            return Err(PyValueError::new_err("malformed dict"));
-        }
-
-        // Skip the 'e'
-        self.position += 1;
-        self.depth -= 1;
-
-        Ok(dict)
-    }
 }
 
 #[pyclass]
 struct Encoder {
     buffer: Vec<u8>,
     bytestring_encoding: Option<String>,
+    max_depth: Option<usize>,
     depth: usize,
-    max_depth: usize,
+}
+
+// A unit of pending encoding work. Containers push their children as Encode
+// tasks followed by a CloseContainer, so encoding stays iterative.
+enum Task<'py> {
+    Encode(Bound<'py, PyAny>),
+    CloseContainer,
 }
 
 #[pymethods]
 impl Encoder {
     #[new]
+    #[pyo3(signature = (_maxsize=None, bytestring_encoding=None, max_depth=None))]
     fn new(
-        py: Python,
         _maxsize: Option<usize>,
         bytestring_encoding: Option<String>,
-    ) -> PyResult<Self> {
-        Ok(Encoder {
+        max_depth: Option<usize>,
+    ) -> Self {
+        Encoder {
             buffer: Vec::new(),
             bytestring_encoding,
+            max_depth,
             depth: 0,
-            max_depth: recursion_limit(py),
-        })
+        }
     }
 
     fn to_bytes<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
         PyBytes::new(py, &self.buffer)
     }
 
-    fn process(&mut self, py: Python, x: Bound<PyAny>) -> PyResult<()> {
-        if self.depth > self.max_depth {
-            return Err(PyRecursionError::new_err(
-                "maximum recursion depth exceeded while encoding bencode",
-            ));
-        }
-        if let Ok(s) = x.extract::<Bound<PyBytes>>() {
-            self.encode_bytes(s)?;
-        } else if let Ok(n) = x.extract::<i64>() {
-            self.encode_int(n)?;
-        } else if let Ok(n) = x.extract::<Bound<PyInt>>() {
-            self.encode_long(n)?;
-        } else if x.is_instance_of::<PyList>() {
-            self.encode_list(py, x)?;
-        } else if x.is_instance_of::<PyTuple>() {
-            self.encode_list(py, x)?;
-        } else if let Ok(d) = x.extract::<Bound<PyDict>>() {
-            self.encode_dict(py, d)?;
-        } else if let Ok(b) = x.extract::<bool>() {
-            self.encode_int(if b { 1 } else { 0 })?;
-        } else if let Ok(obj) = x.extract::<PyRef<Bencached>>() {
-            self.append_bytes(obj.as_bytes(py)?)?;
-        } else if let Ok(s) = x.extract::<&str>() {
-            self.encode_string(s)?;
-        } else {
-            return Err(PyTypeError::new_err(format!("unsupported type: {:?}", x)));
+    // Encode a value using an explicit work-stack rather than recursion, so
+    // that deeply nested input does not overflow the native stack.
+    fn process<'py>(&mut self, py: Python<'py>, x: Bound<'py, PyAny>) -> PyResult<()> {
+        let mut stack: Vec<Task<'py>> = vec![Task::Encode(x)];
+
+        while let Some(task) = stack.pop() {
+            let x = match task {
+                Task::CloseContainer => {
+                    self.buffer.push(b'e');
+                    self.depth -= 1;
+                    continue;
+                }
+                Task::Encode(x) => x,
+            };
+
+            if let Ok(s) = x.extract::<Bound<PyBytes>>() {
+                self.encode_bytes(s)?;
+            } else if let Ok(n) = x.extract::<i64>() {
+                self.encode_int(n)?;
+            } else if let Ok(n) = x.extract::<Bound<PyInt>>() {
+                self.encode_long(n)?;
+            } else if x.is_instance_of::<PyList>() || x.is_instance_of::<PyTuple>() {
+                self.push_list(&mut stack, x)?;
+            } else if let Ok(d) = x.extract::<Bound<PyDict>>() {
+                self.push_dict(&mut stack, d)?;
+            } else if let Ok(b) = x.extract::<bool>() {
+                self.encode_int(if b { 1 } else { 0 })?;
+            } else if let Ok(obj) = x.extract::<PyRef<Bencached>>() {
+                self.append_bytes(obj.as_bytes(py)?)?;
+            } else if let Ok(s) = x.extract::<&str>() {
+                self.encode_string(s)?;
+            } else {
+                return Err(PyTypeError::new_err(format!("unsupported type: {:?}", x)));
+            }
         }
         Ok(())
     }
@@ -385,29 +432,54 @@ impl Encoder {
             ))
         }
     }
+}
 
-    fn encode_list(&mut self, py: Python, sequence: Bound<PyAny>) -> PyResult<()> {
-        self.depth += 1;
-        self.buffer.push(b'l');
-
-        for item in sequence.try_iter()? {
-            self.process(py, item?.into())?;
+impl Encoder {
+    fn check_depth(&mut self) -> PyResult<()> {
+        if let Some(max) = self.max_depth {
+            if self.depth >= max {
+                return Err(PyRecursionError::new_err(
+                    "maximum bencode nesting depth exceeded",
+                ));
+            }
         }
-
-        self.buffer.push(b'e');
-        self.depth -= 1;
+        self.depth += 1;
         Ok(())
     }
 
-    fn encode_dict(&mut self, py: Python, dict: Bound<PyDict>) -> PyResult<()> {
-        self.depth += 1;
+    fn push_list<'py>(
+        &mut self,
+        stack: &mut Vec<Task<'py>>,
+        sequence: Bound<'py, PyAny>,
+    ) -> PyResult<()> {
+        self.check_depth()?;
+        self.buffer.push(b'l');
+
+        let items: Vec<Bound<PyAny>> = sequence.try_iter()?.collect::<PyResult<Vec<_>>>()?;
+
+        stack.push(Task::CloseContainer);
+        for item in items.into_iter().rev() {
+            stack.push(Task::Encode(item));
+        }
+        Ok(())
+    }
+
+    fn push_dict<'py>(
+        &mut self,
+        stack: &mut Vec<Task<'py>>,
+        dict: Bound<'py, PyDict>,
+    ) -> PyResult<()> {
+        self.check_depth()?;
         self.buffer.push(b'd');
 
-        // Get all keys and sort them
+        // Keys must be byte strings; sort them for canonical ordering.
         let mut keys: Vec<Bound<PyBytes>> = dict
             .keys()
             .iter()
-            .map(|key| key.extract::<Bound<PyBytes>>().map_err(|e| e.into()))
+            .map(|key| {
+                key.extract::<Bound<PyBytes>>()
+                    .map_err(|_| PyTypeError::new_err("key in dict should be string"))
+            })
             .collect::<PyResult<Vec<_>>>()?;
         keys.sort_by(|a, b| {
             let a_str = a.extract::<&[u8]>().unwrap();
@@ -415,52 +487,65 @@ impl Encoder {
             a_str.cmp(b_str)
         });
 
-        for key in keys {
-            if let Ok(bytes) = key.extract::<Bound<PyBytes>>() {
-                self.encode_bytes(bytes)?;
-            } else {
-                return Err(PyTypeError::new_err("key in dict should be string"));
-            }
-
-            if let Some(value) = dict.get_item(key)? {
-                self.process(py, value.into())?;
-            }
+        // Stack key/value pairs in reverse so they pop in key order, each key
+        // (a byte string) encoded immediately before its value.
+        stack.push(Task::CloseContainer);
+        for key in keys.into_iter().rev() {
+            let value = dict
+                .get_item(&key)?
+                .ok_or_else(|| PyTypeError::new_err("dict key vanished during encoding"))?;
+            stack.push(Task::Encode(value));
+            stack.push(Task::Encode(key.into_any()));
         }
-
-        self.buffer.push(b'e');
-        self.depth -= 1;
         Ok(())
     }
 }
 
 #[pyfunction]
-fn bdecode<'py>(py: Python<'py>, s: &Bound<PyBytes>) -> PyResult<Bound<'py, PyAny>> {
-    let mut decoder = Decoder::new(s, None, None)?;
+#[pyo3(signature = (s, max_depth=None))]
+fn bdecode<'py>(
+    py: Python<'py>,
+    s: &Bound<PyBytes>,
+    max_depth: Option<usize>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let mut decoder = Decoder::new(s, None, None, max_depth);
     decoder.decode(py)
 }
 
 #[pyfunction]
-fn bdecode_as_tuple<'py>(py: Python<'py>, s: &Bound<PyBytes>) -> PyResult<Bound<'py, PyAny>> {
-    let mut decoder = Decoder::new(s, Some(true), None)?;
+#[pyo3(signature = (s, max_depth=None))]
+fn bdecode_as_tuple<'py>(
+    py: Python<'py>,
+    s: &Bound<PyBytes>,
+    max_depth: Option<usize>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let mut decoder = Decoder::new(s, Some(true), None, max_depth);
     decoder.decode(py)
 }
 
 #[pyfunction]
-fn bdecode_utf8<'py>(py: Python<'py>, s: &Bound<PyBytes>) -> PyResult<Bound<'py, PyAny>> {
-    let mut decoder = Decoder::new(s, None, Some("utf-8".to_string()))?;
+#[pyo3(signature = (s, max_depth=None))]
+fn bdecode_utf8<'py>(
+    py: Python<'py>,
+    s: &Bound<PyBytes>,
+    max_depth: Option<usize>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let mut decoder = Decoder::new(s, None, Some("utf-8".to_string()), max_depth);
     decoder.decode(py)
 }
 
 #[pyfunction]
-fn bencode(py: Python, x: Bound<PyAny>) -> PyResult<Py<PyAny>> {
-    let mut encoder = Encoder::new(py, None, None)?;
+#[pyo3(signature = (x, max_depth=None))]
+fn bencode(py: Python, x: Bound<PyAny>, max_depth: Option<usize>) -> PyResult<Py<PyAny>> {
+    let mut encoder = Encoder::new(None, None, max_depth);
     encoder.process(py, x)?;
     Ok(encoder.to_bytes(py).into())
 }
 
 #[pyfunction]
-fn bencode_utf8(py: Python, x: Bound<PyAny>) -> PyResult<Py<PyAny>> {
-    let mut encoder = Encoder::new(py, None, Some("utf-8".to_string()))?;
+#[pyo3(signature = (x, max_depth=None))]
+fn bencode_utf8(py: Python, x: Bound<PyAny>, max_depth: Option<usize>) -> PyResult<Py<PyAny>> {
+    let mut encoder = Encoder::new(None, Some("utf-8".to_string()), max_depth);
     encoder.process(py, x)?;
     Ok(encoder.to_bytes(py).into())
 }

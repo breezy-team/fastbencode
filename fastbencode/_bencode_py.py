@@ -29,6 +29,8 @@ class BDecoder:
         """
         self.yield_tuples = yield_tuples
         self.bytestring_encoding = bytestring_encoding
+        self._max_depth = None
+        self._depth = 0
         decode_func = {}
         decode_func[b"l"] = self.decode_list
         decode_func[b"d"] = self.decode_dict
@@ -67,15 +69,22 @@ class BDecoder:
         return (d, colon + n)
 
     def decode_list(self, x, f):
+        if self._max_depth is not None and self._depth >= self._max_depth:
+            raise RecursionError("maximum bencode nesting depth exceeded")
+        self._depth += 1
         r, f = [], f + 1
         while x[f : f + 1] != b"e":
             v, f = self.decode_func[x[f : f + 1]](x, f)
             r.append(v)
+        self._depth -= 1
         if self.yield_tuples:
             r = tuple(r)
         return (r, f + 1)
 
     def decode_dict(self, x, f):
+        if self._max_depth is not None and self._depth >= self._max_depth:
+            raise RecursionError("maximum bencode nesting depth exceeded")
+        self._depth += 1
         r, f = {}, f + 1
         lastkey = None
         while x[f : f + 1] != b"e":
@@ -84,11 +93,14 @@ class BDecoder:
                 raise ValueError
             lastkey = k
             r[k], f = self.decode_func[x[f : f + 1]](x, f)
+        self._depth -= 1
         return (r, f + 1)
 
-    def bdecode(self, x):
+    def bdecode(self, x, max_depth=None):
         if not isinstance(x, bytes):
             raise TypeError
+        self._max_depth = max_depth
+        self._depth = 0
         try:
             r, l = self.decode_func[x[:1]](x, 0)  # noqa: E741
         except (IndexError, KeyError, OverflowError) as e:
@@ -118,6 +130,8 @@ class Bencached:
 class BEncoder:
     def __init__(self, bytestring_encoding=None):
         self.bytestring_encoding = bytestring_encoding
+        self._max_depth = None
+        self._depth = 0
         self.encode_func: dict[type, Callable[[object, list[bytes]], None]] = {
             Bencached: self.encode_bencached,
             int: self.encode_int,
@@ -142,18 +156,26 @@ class BEncoder:
         r.extend((int_to_bytes(len(x)), b":", x))
 
     def encode_list(self, x, r):
+        if self._max_depth is not None and self._depth >= self._max_depth:
+            raise RecursionError("maximum bencode nesting depth exceeded")
+        self._depth += 1
         r.append(b"l")
         for i in x:
             self.encode(i, r)
         r.append(b"e")
+        self._depth -= 1
 
     def encode_dict(self, x, r):
+        if self._max_depth is not None and self._depth >= self._max_depth:
+            raise RecursionError("maximum bencode nesting depth exceeded")
+        self._depth += 1
         r.append(b"d")
         ilist = sorted(x.items())
         for k, v in ilist:
             r.extend((int_to_bytes(len(k)), b":", k))
             self.encode(v, r)
         r.append(b"e")
+        self._depth -= 1
 
     def encode_str(self, x, r):
         if self.bytestring_encoding is None:
@@ -171,15 +193,17 @@ def int_to_bytes(n):
     return b"%d" % n
 
 
-def bencode(x):
+def bencode(x, max_depth=None):
     r = []
     encoder = BEncoder()
+    encoder._max_depth = max_depth
     encoder.encode(x, r)
     return b"".join(r)
 
 
-def bencode_utf8(x):
+def bencode_utf8(x, max_depth=None):
     r = []
     encoder = BEncoder(bytestring_encoding="utf-8")
+    encoder._max_depth = max_depth
     encoder.encode(x, r)
     return b"".join(r)

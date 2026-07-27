@@ -291,11 +291,18 @@ class TestBencodeDecode(TestCase):
     def test_list_deepnested(self):
         import platform
 
-        if (
-            platform.python_implementation() == "PyPy"
-            or sys.version_info[:2] >= (3, 12)
-            or self.id().endswith("(C)")
-        ):
+        if self.id().endswith("(C)"):
+            # The Rust decoder is iterative, so nesting far deeper than the
+            # native stack would allow still decodes without crashing.
+            depth = 100000
+            result = self.module.bdecode((b"l" * depth) + (b"e" * depth))
+            for _ in range(depth - 1):
+                self.assertEqual(1, len(result))
+                result = result[0]
+            self.assertEqual([], result)
+        elif platform.python_implementation() == "PyPy" or sys.version_info[
+            :2
+        ] >= (3, 12):
             expected = []
             for i in range(99):
                 expected = [expected]
@@ -327,10 +334,55 @@ class TestBencodeDecode(TestCase):
         )
 
     def test_dict_deepnested(self):
+        if self.id().endswith("(C)"):
+            # The Rust decoder is iterative, so a dict nested far deeper than
+            # the native stack would allow still decodes without crashing.
+            depth = 100000
+            result = self.module.bdecode(
+                (b"d0:" * depth) + b"i1e" + (b"e" * depth)
+            )
+            for _ in range(depth):
+                result = result[b""]
+            self.assertEqual(1, result)
+            return
+
         with RecursionLimit():
             self._run_check_error(
                 RuntimeError, (b"d0:" * 1000) + b"i1e" + (b"e" * 1000)
             )
+
+    def test_max_depth(self):
+        # A top-level container counts as depth 1.
+        self.assertEqual([], self.module.bdecode(b"le", max_depth=1))
+        self.assertEqual([[]], self.module.bdecode(b"llee", max_depth=2))
+        self.assertEqual({}, self.module.bdecode(b"de", max_depth=1))
+        self.assertEqual(
+            {b"": {}}, self.module.bdecode(b"d0:dee", max_depth=2)
+        )
+        # Mixed nesting: {b"": [[]]} is three levels deep.
+        self.assertEqual(
+            {b"": [[]]}, self.module.bdecode(b"d0:lleee", max_depth=3)
+        )
+
+    def test_max_depth_exceeded(self):
+        self.assertRaises(
+            RecursionError, self.module.bdecode, b"llee", max_depth=1
+        )
+        self.assertRaises(
+            RecursionError, self.module.bdecode, b"d0:dee", max_depth=1
+        )
+        self.assertRaises(
+            RecursionError, self.module.bdecode, b"d0:lleee", max_depth=2
+        )
+
+    def test_max_depth_none_matches_default(self):
+        # max_depth=None must behave exactly like omitting it. The pure-Python
+        # decoder is recursive, so stay well under the interpreter's limit.
+        deep = (b"l" * 100) + (b"e" * 100)
+        self.assertEqual(
+            self.module.bdecode(deep),
+            self.module.bdecode(deep, max_depth=None),
+        )
 
     def test_malformed_dict(self):
         self._run_check_error(ValueError, b"d")
@@ -438,6 +490,19 @@ class TestBencodeEncode(TestCase):
         self._check(b"ll5:Alice3:Bobeli2ei3eee", ((b"Alice", b"Bob"), (2, 3)))
 
     def test_list_deep_nested(self):
+        if self.id().endswith("(C)"):
+            # The Rust encoder is iterative, so nesting far deeper than the
+            # native stack would allow still encodes without crashing.
+            depth = 100000
+            top = []
+            lst = top
+            for _ in range(depth - 1):
+                lst.append([])
+                lst = lst[0]
+            expected = (b"l" * depth) + (b"e" * depth)
+            self.assertEqual(expected, self.module.bencode(top))
+            return
+
         top = []
         lst = top
         for unused_i in range(1000):
@@ -455,12 +520,47 @@ class TestBencodeEncode(TestCase):
         )
 
     def test_dict_deep_nested(self):
+        if self.id().endswith("(C)"):
+            # The Rust encoder is iterative, so a dict nested far deeper than
+            # the native stack would allow still encodes without crashing.
+            depth = 100000
+            d = top = {}
+            for _ in range(depth):
+                d[b""] = {}
+                d = d[b""]
+            expected = (b"d0:" * depth) + b"de" + (b"e" * depth)
+            self.assertEqual(expected, self.module.bencode(top))
+            return
+
         d = top = {}
         for i in range(1000):
             d[b""] = {}
             d = d[b""]
         with RecursionLimit():
             self.assertRaises(RuntimeError, self.module.bencode, top)
+
+    def test_max_depth(self):
+        # A top-level container counts as depth 1.
+        self.assertEqual(b"li1ei2ee", self.module.bencode([1, 2], max_depth=1))
+        self.assertEqual(b"lli1eee", self.module.bencode([[1]], max_depth=2))
+        self.assertEqual(
+            b"d1:ai1ee", self.module.bencode({b"a": 1}, max_depth=1)
+        )
+        self.assertEqual(
+            b"d1:ad1:bi1eee",
+            self.module.bencode({b"a": {b"b": 1}}, max_depth=2),
+        )
+
+    def test_max_depth_exceeded(self):
+        self.assertRaises(
+            RecursionError, self.module.bencode, [[1]], max_depth=1
+        )
+        self.assertRaises(
+            RecursionError, self.module.bencode, {b"a": {b"b": 1}}, max_depth=1
+        )
+        self.assertRaises(
+            RecursionError, self.module.bencode, {b"a": [[1]]}, max_depth=2
+        )
 
     def test_bencached(self):
         self._check(b"i3e", self.module.Bencached(self.module.bencode(3)))
